@@ -1,0 +1,11 @@
+es:
+  username: elastic
+  password: yuanzh0623
+  host: http://127.0.0.1:9200
+  keyword-limit: 10000
+  vector:
+    dim: 512
+  max-retries: 5
+  max-size: 4000
+  timeout: 3000
+  test-index: test_index_comp
