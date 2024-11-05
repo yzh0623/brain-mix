@@ -1,9 +1,8 @@
 """
-Copyright (c) 2024 by paohe information technology Co., Ltd. All right reserved.
 FilePath: /brain-mix/utils/elastic_util.py
 Author: yuanzhenhui
 Date: 2024-08-09 10:19:24
-LastEditTime: 2024-11-04 00:35:10
+LastEditTime: 2024-11-05 08:29:32
 """
 
 from yaml_util import YamlConfig 

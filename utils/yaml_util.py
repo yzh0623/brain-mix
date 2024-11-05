@@ -1,9 +1,8 @@
 """
-Copyright (c) 2024 by paohe information technology Co., Ltd. All right reserved.
 FilePath: /brain-mix/utils/yaml_util.py
 Author: yuanzhenhui
 Date: 2024-07-05 17:08:08
-LastEditTime: 2024-11-02 22:02:23
+LastEditTime: 2024-11-05 08:29:10
 """
 
 import yaml
