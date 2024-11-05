@@ -1,9 +1,11 @@
 """
+Copyright (c) 2024 by yuanzhenhui All right reserved.
 FilePath: /brain-mix/utils/elastic_util.py
 Author: yuanzhenhui
-Date: 2024-08-09 10:19:24
-LastEditTime: 2024-11-05 08:29:32
+Date: 2024-11-05 08:04:51
+LastEditTime: 2024-11-05 08:35:04
 """
+
 
 from yaml_util import YamlConfig 
 from elasticsearch import Elasticsearch

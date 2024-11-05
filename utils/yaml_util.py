@@ -1,9 +1,11 @@
 """
+Copyright (c) 2024 by yuanzhenhui All right reserved.
 FilePath: /brain-mix/utils/yaml_util.py
 Author: yuanzhenhui
-Date: 2024-07-05 17:08:08
-LastEditTime: 2024-11-05 08:29:10
+Date: 2024-11-05 08:04:51
+LastEditTime: 2024-11-05 08:35:13
 """
+
 
 import yaml
 
