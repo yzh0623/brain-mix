@@ -1,0 +1,8 @@
+pressure:
+  num-users: 100
+  num-queues: 2
+  mode: count # 'count'（循环次数） 或 'duration'（持续时间‘秒为单位’）
+  limit: 4 # 如果是 duration 模式，单位为秒,如果是 count 模式，单位为次数
+  interval: 0.5 # 执行间隔
+  data-filename: question.json
+  target-url: http://192.168.200.200:19078/api/stream/services/text-generation
