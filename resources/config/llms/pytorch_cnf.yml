@@ -1,0 +1,10 @@
+pytorch:
+  chat_path: "/data/modelscope/Qwen/Qwen2.5-3B-Instruct" # 模型路径
+  quant:
+    use_4bit: True                # 4bit量化
+    use_double_quant: True        # 双量化
+    quant_type: nf4               # nf4、nf16
+  gpu_memory:
+    threshold_percentage: 25      # GPU显存阈值百分比
+  multi_core: 1                   # 多进程
+  switch_thrid: True              # 切换第三方模型

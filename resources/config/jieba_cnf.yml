@@ -1,0 +1,10 @@
+jieba:
+  top_k: 5
+  weight: 0.2
+  allowed_pos:
+    - "n"
+    - "nr"
+    - "ns"
+    - "nt"
+    - "nw"
+    - "nz"

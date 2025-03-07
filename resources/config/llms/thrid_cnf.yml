@@ -1,0 +1,13 @@
+silicon:
+  url: "https://api.siliconflow.cn/v1"                      # Silicon API endpoint
+  api_key:                                                  # Silicon API keys
+    - sk-wteayytymjvkpithsdfcmhxwdfzccxrwfckvsspwskiehnek
+    - sk-mumqlvkdxootbgygcyuyedycwmvejcyuiduobggplcdfczce
+    - sk-lsfrzwglammlofuyarlyrztyigdrbpkmyjlamsgdqbivzmef
+    - sk-jicecrwwjexuxtlmtatabmwobdczlzohkswnkxaolmqbeobm
+    - sk-ffivrppcpmbmznjbdvsxweuldrpczsyitqxualxvptmsedmh
+    - sk-dnfdqbbpgxpuhsmtjwjbjrlaowonxfmcqlbeaunxgtvuxkbz
+  models:                                                   # Supported models
+    - Qwen/Qwen2.5-7B-Instruct
+    - Qwen/Qwen2-7B-Instruct
+

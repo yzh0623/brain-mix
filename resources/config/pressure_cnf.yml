@@ -1,0 +1,8 @@
+pressure:
+  num-users: 100
+  num-threads: 5
+  mode: count
+  num-tasks: 20
+  duration: 1200
+  data-filename: question.json
+  target-url: http://127.0.0.1:19078/api/stream/services/text-generation

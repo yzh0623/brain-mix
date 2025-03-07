@@ -1,0 +1,51 @@
+es:
+  username: elastic
+  password: yuanzh0623
+  host: http://127.0.0.1:9200
+  max-retries: 5
+  max-size: 4000
+  timeout: 3000
+  rag:
+    knowledge:
+      -
+        index_name: kb_ancient_books
+        vector_field: ancient_vector
+        text_field: ancient_text
+      -
+        index_name: kb_question_answering
+        vector_field: qna_vector
+        text_field: qna_text
+    common_mapping:
+      settings:
+        number_of_shards: 1
+        number_of_replicas: 0
+      mappings:
+        properties:
+          vector_field: 
+            type: dense_vector
+            dims: 512
+          text_field:
+            type: text
+  nlp:
+    session_index: user_sessions
+    session_mapping: 
+      mappings:
+        properties:
+          user_id:
+            type: text
+          chat_date:
+            type: date
+          title:
+            type: text
+    context_index: user_context
+    context_mapping:
+      mappings:
+        properties:
+          session_id:
+            type: text
+          role:
+            type: text
+          content:
+            type: text
+          chat_date:
+            type: date

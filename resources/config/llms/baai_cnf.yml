@@ -1,0 +1,10 @@
+baai:
+  embedding:
+    path: "/data/modelscope/BAAI/bge-small-zh-v1.5"   # 模型路径
+    normalize_embeddings: True                        # normalize embeddings
+  reranker:
+    path: "/data/modelscope/BAAI/bge-reranker-v2-m3"  # 模型路径
+    batch_size: 32                                    # batch size
+    top_k: 10                                         # top k
+  use_truncation: True                                # use truncation
+  use_padding: True                                   # use padding
