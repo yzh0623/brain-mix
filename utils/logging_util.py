@@ -5,6 +5,7 @@ import re
 import os
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+import const_util as CU
 from yaml_util import YamlUtil
 
 class LoggingUtil(Logger):
@@ -12,7 +13,7 @@ class LoggingUtil(Logger):
     def __init__(self,name) -> None:
         
         # logging 配置
-        logging_cnf = os.path.join(project_dir, 'resources', 'config', 'utils_cnf.yml')
+        logging_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml')
         logging_path = os.path.join(YamlUtil(logging_cnf).get_value('logging.path'), os.path.basename(project_dir))
         logging_level = f"logging.{YamlUtil(logging_cnf).get_value('logging.level')}"
         logging_interval = int(YamlUtil(logging_cnf).get_value('logging.interval'))

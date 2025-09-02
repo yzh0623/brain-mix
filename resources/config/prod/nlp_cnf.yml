@@ -1,0 +1,34 @@
+models:
+  reasoning:
+    origin_path: <model_path>/Qwen2.5-1.5B
+    quant_path: nlp/model/reasoning/load/after_quant
+  embedding:
+    path: <embedding_path>/bge-large-zh-v1.5
+    normalize_embeddings: True
+
+datasets:
+  base_path: <dataset_path>/Datasets
+  dir_name:
+  - hwtcm-deepseek
+  - hwtcm-sft-v1
+  - shennong-tcm
+  - five-phases-mindset
+  tmp_gather_db:
+    es_gather_qa:
+      mappings:
+        properties:
+          question:
+            type: keyword
+          answer:
+            type: keyword
+          gather_text:
+            type: text
+          gather_vector_1024:
+            type: dense_vector
+            dims: 1024
+            index: true
+            similarity: cosine
+          process_status:
+            type: integer
+          data_source:
+            type: keyword

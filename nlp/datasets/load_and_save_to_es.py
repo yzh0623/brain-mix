@@ -8,6 +8,7 @@ import tiktoken
 from common_util import CommonUtil
 from api_util import ApiUtil
 from tqdm import tqdm
+import const_util as CU
 import threading
 
 from models.embedding.data_embedding import DataEmbedding
@@ -18,12 +19,11 @@ logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
 from persistence.elastic_util import ElasticUtil
 
-TMP_ES_INDEX = "es_gather_qa"
 
 class LoadAndSaveToEs:
     def __init__(self):
         
-        nlp_cnf = os.path.join(project_dir, 'resources', 'config', 'nlp_cnf.yml')
+        nlp_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE , 'nlp_cnf.yml')
         base_path = YamlUtil(nlp_cnf).get_value('datasets.base_path')
         dirs_name = YamlUtil(nlp_cnf).get_value('datasets.dir_name')
         self.datasets_path = {}
@@ -36,11 +36,11 @@ class LoadAndSaveToEs:
         
         self.enc = tiktoken.get_encoding("cl100k_base")
         self.api = ApiUtil()
-        utils_cnf = os.path.join(project_dir, 'resources', 'config', 'utils_cnf.yml')
+        utils_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE , 'utils_cnf.yml')
         self.embedding_model = YamlUtil(utils_cnf).get_value('silicon.agent.content_embedding.model')
         
         es_gather_qa_mapping = YamlUtil(nlp_cnf).get_value('datasets.tmp_gather_db')
-        self.elastic.create_index(name=TMP_ES_INDEX, mapping=es_gather_qa_mapping[TMP_ES_INDEX])
+        self.elastic.create_index(name=CU.TMP_ES_INDEX, mapping=es_gather_qa_mapping[CU.TMP_ES_INDEX])
     
     def save_hwtcm_deepseek_data(self):
         """
@@ -89,14 +89,9 @@ class LoadAndSaveToEs:
         
         qa_array = []
         for dataset in dataset_array:
-            # The question is in the form of:
-            # "What is the meaning of XXXX?  Requirements: XXXX"
-            # We only need the part before the "Requirements"
             question = dataset["query"]
             question = question.split("要求：")[0]
             
-            # The answer is in the form of a string
-            # We need to strip the newline and space
             answer = dataset["response"]
             answer = answer.strip().replace("\n", " ")
             qa_array.append({
@@ -151,7 +146,7 @@ class LoadAndSaveToEs:
                 search_thread.join()
             
             # Save the data to ES
-            self.elastic.batch_insert(TMP_ES_INDEX,qa_batch_array)
+            self.elastic.batch_insert(CU.TMP_ES_INDEX,qa_batch_array)
     
     def _thread_to_get_vectors(self,qa_split,qa_batch_array,flag):
         """
@@ -169,13 +164,13 @@ class LoadAndSaveToEs:
             qa_json["gather_text"] = f"【问题】{qa_json['question']}【答案】{qa_json['answer']}"
             # Use the embedding model to convert the text to a vector
             if flag == 0:
-                qa_json["gather_vector_1024"] = CommonUtil.request_embedding(qa_json["gather_text"])
+                qa_json[CU.TMP_ES_VECTOR_FIELDS] = CommonUtil.request_embedding(qa_json["gather_text"])
             else:
                 content = qa_json["gather_text"]
                 if len(self.enc.encode(content))< 400:
-                    qa_json["gather_vector_1024"] = self.api.embedding_with_sync(self.embedding_model,[content])[0]
+                    qa_json[CU.TMP_ES_VECTOR_FIELDS] = self.api.embedding_with_sync(self.embedding_model,[content])[0]
                 else:
-                    qa_json["gather_vector_1024"] = self.embedding.array_to_embedding([content])[0]
+                    qa_json[CU.TMP_ES_VECTOR_FIELDS] = self.embedding.array_to_embedding([content])[0]
                     
             # Set the process status to 0
             qa_json["process_status"] = 0

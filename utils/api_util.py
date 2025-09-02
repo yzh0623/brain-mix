@@ -16,6 +16,8 @@ from openai import OpenAI
 import os
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
+import const_util as CU
+
 from yaml_util import YamlUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
@@ -29,7 +31,7 @@ class ApiUtil:
     def __init__(self):
 
         # 硅基流动配置
-        self._silicon_cnf = os.path.join(project_dir, 'resources', 'config', 'utils_cnf.yml')
+        self._silicon_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml')
         self.api_keys = YamlUtil(self._silicon_cnf).get_value('silicon.api_key')
         self.base_url = YamlUtil(self._silicon_cnf).get_value('silicon.url')
         self.max_retries = int(YamlUtil(self._silicon_cnf).get_value('silicon.max_retries'))

@@ -1,0 +1,30 @@
+logging:
+  path: <logging_path>
+  level: DEBUG
+  interval: 1
+  backup_count: 30
+
+persistence:
+  elastic:
+    host: <elastic_host>
+    username: <elastic_username>
+    password: <elastic_password>
+    max_retries: 3
+    timeout: 30
+  mysql:
+    host: <mysql_host>
+    port: <mysql_port>
+    username: <mysql_username>
+    password: <mysql_password>
+    schemas: <mysql_schemas>
+    charset: utf8mb4
+
+silicon:
+  url: "https://api.siliconflow.cn/v1"
+  api_key:
+  - <silicon_key>
+  max_retries: 3
+  timeouts: 60
+  agent:
+    content_embedding:
+      model: BAAI/bge-large-zh-v1.5

@@ -1,9 +1,9 @@
 """
 Copyright (c) 2024 by yuanzhenhui All right reserved.
-FilePath: /brain-mix/utils/elastic_util.py
+FilePath: /brain-mix/utils/persistence/elastic_util.py
 Author: yuanzhenhui
 Date: 2024-11-05 08:04:51
-LastEditTime: 2025-09-01 14:24:21
+LastEditTime: 2025-09-02 13:44:52
 """
 
 import threading
@@ -16,11 +16,12 @@ import sys
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.join(project_dir, 'utils'))
 
+import const_util as CU
 from yaml_util import YamlUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
-elastic_cnf = os.path.join(project_dir, 'resources', 'config', 'utils_cnf.yml')
+elastic_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml')
 
 class ElasticUtil:
 

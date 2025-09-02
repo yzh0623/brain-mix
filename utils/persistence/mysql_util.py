@@ -15,6 +15,7 @@ import sys
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.join(project_dir, 'utils'))
 
+import const_util as CU
 from yaml_util import YamlUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
@@ -49,7 +50,7 @@ class MysqlUtil:
             )
         else:
             # Load MySQL configuration from YAML file
-            mysql_cnf = YamlUtil(os.path.join(project_dir, 'resources', 'config', 'utils_cnf.yml'))
+            mysql_cnf = YamlUtil(os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml'))
             
             # Connect to MySQL using configuration from YAML file
             self._conn = pymysql.connect(

@@ -3,7 +3,7 @@ Copyright (c) 2025 by yuanzhenhui All right reserved.
 FilePath: /brain-mix/nlp/models/embedding/data_embedding.py
 Author: yuanzhenhui
 Date: 2025-07-25 15:14:31
-LastEditTime: 2025-09-01 15:58:46
+LastEditTime: 2025-09-02 13:42:22
 """
 
 from sentence_transformers import SentenceTransformer
@@ -13,6 +13,7 @@ import os
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.append(os.path.join(project_dir, 'utils'))
 
+import const_util as CU
 from logging_util import LoggingUtil
 from yaml_util import YamlUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
@@ -24,7 +25,7 @@ class DataEmbedding:
 
     def __init__(self):
         if not DataEmbedding._initialized:
-            nlp_cnf = os.path.join(project_dir, 'resources', 'config', 'nlp_cnf.yml')
+            nlp_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE , 'nlp_cnf.yml')
             embedding_path = YamlUtil(nlp_cnf).get_value('models.embedding.path')
             self.normalize_embeddings = YamlUtil(nlp_cnf).get_value('models.embedding.normalize_embeddings')
             self.embedding_model = SentenceTransformer(embedding_path, device="cpu")
