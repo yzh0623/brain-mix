@@ -1,5 +1,0 @@
-logging:
-  path: /home/yzh/Documents/logs
-  level: DEBUG
-  interval: 1
-  backup_count: 30
