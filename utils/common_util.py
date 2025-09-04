@@ -93,8 +93,11 @@ class CommonUtil:
         ret_msg = None
         url = "http://192.168.200.193:9807/api/text_to_baai_vector"
         # Send the request
-        respnse = requests.post(url, json={"text_array": [text], "use_large": True})
-        if respnse.status_code == 200:
-            # Parse the response
-            ret_msg = json.loads(respnse.text)["result"][0]
+        try:
+            respnse = requests.post(url, json={"text_array": [text], "use_large": True})
+            if respnse.status_code == 200:
+                # Parse the response
+                ret_msg = json.loads(respnse.text)["result"][0]
+        except Exception as e:
+            pass
         return ret_msg

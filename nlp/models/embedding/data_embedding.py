@@ -3,7 +3,7 @@ Copyright (c) 2025 by yuanzhenhui All right reserved.
 FilePath: /brain-mix/nlp/models/embedding/data_embedding.py
 Author: yuanzhenhui
 Date: 2025-07-25 15:14:31
-LastEditTime: 2025-09-02 13:42:22
+LastEditTime: 2025-09-02 19:37:47
 """
 
 from sentence_transformers import SentenceTransformer
@@ -43,6 +43,10 @@ class DataEmbedding:
                 text_array,
                 normalize_embeddings=self.normalize_embeddings
             )
+            if hasattr(sentence_embeddings, 'tolist'):
+                return sentence_embeddings.tolist()
+            else:
+                return sentence_embeddings
         except Exception as e:
-            logger.error(e)
-        return sentence_embeddings.tolist() if hasattr(sentence_embeddings, 'tolist') else sentence_embeddings
+            pass
+        return []

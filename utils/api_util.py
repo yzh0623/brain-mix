@@ -3,7 +3,7 @@ Copyright (c) 2025 by yuanzhenhui All right reserved.
 FilePath: /brain-mix/utils/api_util.py
 Author: yuanzhenhui
 Date: 2025-02-25 18:03:21
-LastEditTime: 2025-09-02 10:57:35
+LastEditTime: 2025-09-04 13:39:31
 """
 import requests
 import json
@@ -31,11 +31,15 @@ class ApiUtil:
     def __init__(self):
 
         # 硅基流动配置
-        self._silicon_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml')
-        self.api_keys = YamlUtil(self._silicon_cnf).get_value('silicon.api_key')
-        self.base_url = YamlUtil(self._silicon_cnf).get_value('silicon.url')
-        self.max_retries = int(YamlUtil(self._silicon_cnf).get_value('silicon.max_retries'))
-        self.timeouts = int(YamlUtil(self._silicon_cnf).get_value('silicon.timeouts'))
+        self.utils_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml')
+        self.api_keys = YamlUtil(self.utils_cnf).get_value('silicon.api_key')
+        self.base_url = YamlUtil(self.utils_cnf).get_value('silicon.url')
+        self.max_retries = int(YamlUtil(self.utils_cnf).get_value('silicon.max_retries'))
+        
+        # # ollama配置
+        # self.ollama_url = YamlUtil(self.utils_cnf).get_value('ollama.url')
+        # self.ollama_model = YamlUtil(self.utils_cnf).get_value('ollama.model')
+        # self.ollama_max_retries = int(YamlUtil(self.utils_cnf).get_value('ollama.max_retries'))
         
         self.enc = tiktoken.get_encoding("cl100k_base")
         self.letter_tokens = {self.enc.encode(c)[0]: -100 for c in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"}
@@ -200,8 +204,9 @@ class ApiUtil:
                         "encoding_format": "float"
                     }
                     response = requests.request("POST", url, json=payload, headers=headers)
-                    embedding_array.append(json.loads(response.text)["data"][0]["embedding"])
-                    break
+                    if response.status_code == 200:
+                        embedding_array.append(json.loads(response.text)["data"][0]["embedding"])
+                        break
                 except Exception as e:
                     if attempt == max_retries - 1:
                         raise
@@ -250,3 +255,23 @@ class ApiUtil:
                     raise
                 time.sleep(1)
         return None
+
+    # def chat_with_ollama(self, prompt_str):
+    #     url = self.ollama_url+"/generate"
+    #     max_retries = self.ollama_max_retries
+    #     for attempt in range(max_retries):
+    #         try:
+    #             payload = {
+    #                 "model": self.ollama_model,
+    #                 "prompt": prompt_str,
+    #                 "stream": False
+    #             }
+                
+    #             response = requests.request("POST", url, json=payload)
+    #             if response.status_code == 200:
+    #                 return json.loads(response.text)["response"]
+    #         except Exception as e:
+    #             if attempt == max_retries - 1:
+    #                 raise
+    #             time.sleep(1)
+    #     return None

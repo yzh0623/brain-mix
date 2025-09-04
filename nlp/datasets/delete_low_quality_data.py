@@ -16,6 +16,7 @@ logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
 from persistence.elastic_util import ElasticUtil
 
+@DeprecationWarning
 class DeleteLowQualityData:
     def __init__(self):
         self.elastic = ElasticUtil()
@@ -71,6 +72,7 @@ class DeleteLowQualityData:
             self.delete_conn,
             CU.TMP_ES_INDEX,
             vector_field=CU.TMP_ES_VECTOR_FIELDS,
+            text_field="gather_text",
             similarity_threshold=0.95
         )
 

@@ -19,7 +19,7 @@ logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
 from persistence.elastic_util import ElasticUtil
 
-
+@DeprecationWarning
 class LoadAndSaveToEs:
     def __init__(self):
         
@@ -162,23 +162,31 @@ class LoadAndSaveToEs:
             # Create a new field in the dictionary which contains the question and answer
             # This is for the embedding model to use
             qa_json["gather_text"] = f"【问题】{qa_json['question']}【答案】{qa_json['answer']}"
+            content = qa_json["gather_text"]
             # Use the embedding model to convert the text to a vector
-            if flag == 0:
-                qa_json[CU.TMP_ES_VECTOR_FIELDS] = CommonUtil.request_embedding(qa_json["gather_text"])
-            else:
-                content = qa_json["gather_text"]
-                if len(self.enc.encode(content))< 400:
-                    qa_json[CU.TMP_ES_VECTOR_FIELDS] = self.api.embedding_with_sync(self.embedding_model,[content])[0]
-                else:
-                    qa_json[CU.TMP_ES_VECTOR_FIELDS] = self.embedding.array_to_embedding([content])[0]
+            vector_content = self._get_embedding(content, flag)
+            if vector_content is None:
+                continue
+            qa_json[CU.TMP_ES_VECTOR_FIELDS] = vector_content
                     
             # Set the process status to 0
             qa_json["process_status"] = 0
             qa_batch_array.append(qa_json)
     
+    def _get_embedding(self, content, flag):
+        """
+        获取内容的embedding向量
+        """
+        if flag == 0 or len(self.enc.encode(content)) >= 400:
+            return CommonUtil.request_embedding(content)
+        else:
+            embed_array = self.api.embedding_with_sync(self.embedding_model, [content])
+            return embed_array[0] if embed_array else None
+    
 if __name__ == "__main__":
     laste = LoadAndSaveToEs()
     # laste.save_hwtcm_deepseek_data()
     # laste.save_hwtcm_sft_data()
-    laste.save_shennong_tcm_data()
-    laste.save_five_phases_mindset_data()
+    #laste.save_shennong_tcm_data()
+    #laste.save_five_phases_mindset_data()
+    pass
