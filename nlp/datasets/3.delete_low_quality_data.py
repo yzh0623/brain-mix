@@ -1,9 +1,9 @@
 """
 Copyright (c) 2025 by Zhenhui Yuan All right reserved.
-FilePath: /brain-mix/nlp/datasets/delete_low_quality_data.py
+FilePath: /brain-mix/nlp/datasets/3.delete_low_quality_data.py
 Author: Zhenhui Yuan
 Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-05 14:34:23
+LastEditTime: 2025-09-05 17:32:32
 """
 
 import time
@@ -31,31 +31,53 @@ class DeleteLowQualityData:
         
         This class will delete low quality data from the Elasticsearch index.
         """
+        # Initialize the Elasticsearch client
         self.elastic = ElasticUtil()
+        
+        # Initialize the CleanUtil class
         self.dh = CleanUtil()
         
         # Read the config file and get the config values
         elastic_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml')
+        
+        # Initialize the Elasticsearch client for deleting data
         self.delete_conn = Elasticsearch(
+            # Elasticsearch host
             hosts=YamlUtil(elastic_cnf).get_value('persistence.elastic.host'),
+            
+            # Elasticsearch username and password
             basic_auth=(
                 YamlUtil(elastic_cnf).get_value('persistence.elastic.username'),
                 YamlUtil(elastic_cnf).get_value('persistence.elastic.password')
             ),
+            
+            # Maximum number of retries to connect to Elasticsearch
             max_retries=int(YamlUtil(elastic_cnf).get_value('persistence.elastic.max_retries')),
+            
+            # The number of connections to make to each node
             connections_per_node=min(50, os.cpu_count() * 4),
+            
+            # The amount of time to wait for a request to be completed
             request_timeout=int(YamlUtil(elastic_cnf).get_value('persistence.elastic.timeout')),
         )
 
     def delete_dulpicate_data(self):
         """
         Delete duplicate data in the Elasticsearch index.
+        
+        :return: None
         """
+        # Construct the SQL query to find the duplicate data
         search_sql = f"select question,answer from {CU.TMP_ES_INDEX} group by question,answer having count(1) > 1"
+        
+        # Find all the duplicate data
         results = self.elastic.find_by_sql(sql=search_sql)
+        
+        # Delete all the duplicate data except for the first one
         if results:
             response_array = results.body["rows"]
             for response in tqdm(response_array, desc="Now delete dulpicate data..."):
+                
                 # Construct the search query to find the duplicate data
                 search_single_body = {
                     "query": {
@@ -67,9 +89,7 @@ class DeleteLowQualityData:
                         }
                     }
                 }
-                # Find all the duplicate data
                 dsl_results = self.elastic.find_by_body_nopaging(name=CU.TMP_ES_INDEX, body=search_single_body)
-                # Delete all the duplicate data except for the first one
                 for idx, dsl_result in enumerate(dsl_results):
                     if idx > 0:
                         self.elastic.delete_by_id(name=CU.TMP_ES_INDEX, id=dsl_result["_id"])
@@ -77,7 +97,10 @@ class DeleteLowQualityData:
     def delete_similar_data(self):
         """
         Delete similar data in the Elasticsearch index.
-        
+
+        This method uses the DBSCAN clustering algorithm to find and remove duplicate vectors from the Elasticsearch index.
+        The similarity threshold is set to 0.95, which means that vectors with a cosine similarity greater than 0.95 will be considered as duplicates.
+
         :return: None
         """
         # Find and remove duplicate vectors from the Elasticsearch index
@@ -90,14 +113,11 @@ class DeleteLowQualityData:
         )
 
 dlqd = DeleteLowQualityData()        
-schedule.every(30).minutes.do(dlqd.delete_dulpicate_data)
-schedule.every(90).minutes.do(dlqd.delete_similar_data)
+schedule.every(3).hours.do(dlqd.delete_similar_data)
 
 if __name__ == "__main__":
     
-    dlqd.delete_dulpicate_data()
     dlqd.delete_similar_data()
-    
     while True:
         schedule.run_pending()
         time.sleep(1)
