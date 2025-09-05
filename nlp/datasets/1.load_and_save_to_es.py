@@ -1,3 +1,11 @@
+"""
+Copyright (c) 2025 by Zhenhui Yuan All right reserved.
+FilePath: /brain-mix/nlp/datasets/1.load_and_save_to_es.py
+Author: Zhenhui Yuan
+Date: 2025-09-05 09:56:19
+LastEditTime: 2025-09-05 14:33:46
+"""
+
 import os
 import sys
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -19,9 +27,19 @@ logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
 from persistence.elastic_util import ElasticUtil
 
-@DeprecationWarning
 class LoadAndSaveToEs:
+    
     def __init__(self):
+        """
+        Initialize the LoadAndSaveToEs class.
+        
+        This class is used to load the datasets from the local file system and save them to Elasticsearch.
+        
+        :param base_path: The base path of the datasets.
+        :type base_path: str
+        :param dirs_name: The list of folder names in the base path.
+        :type dirs_name: list
+        """
         
         nlp_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE , 'nlp_cnf.yml')
         base_path = YamlUtil(nlp_cnf).get_value('datasets.base_path')
@@ -31,14 +49,34 @@ class LoadAndSaveToEs:
             folder_path = os.path.join(base_path, dir_name)
             self.datasets_path[dir_name] = CommonUtil.get_file_paths(folder_path,".json")
         
+        """
+        The Elasticsearch client
+        """
         self.elastic = ElasticUtil()
+        
+        """
+        The DataEmbedding class is used to get the embedding of a given text.
+        """
         self.embedding = DataEmbedding()
         
+        """
+        The tiktoken encoding used to get the length of a given text.
+        """
         self.enc = tiktoken.get_encoding("cl100k_base")
+        
+        """
+        The ApiUtil class is used to get the scores of a given text from the Silicon API.
+        """
         self.api = ApiUtil()
+        
         utils_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE , 'utils_cnf.yml')
         self.embedding_model = YamlUtil(utils_cnf).get_value('silicon.agent.content_embedding.model')
         
+        """
+        Create the Elasticsearch index and mapping.
+        
+        The mapping is used to define the structure of the index.
+        """
         es_gather_qa_mapping = YamlUtil(nlp_cnf).get_value('datasets.tmp_gather_db')
         self.elastic.create_index(name=CU.TMP_ES_INDEX, mapping=es_gather_qa_mapping[CU.TMP_ES_INDEX])
     
@@ -65,6 +103,16 @@ class LoadAndSaveToEs:
     def save_hwtcm_sft_data(self):
         """
         Save the data from the hwtcm-sft-v1 dataset to ES
+        
+        This function loads the data from the hwtcm-sft-v1 dataset and saves it to ES.
+        
+        The data in the hwtcm-sft-v1 dataset is in the form of a JSON file, where each line is a
+        dictionary containing a question and an answer. The question is in the form of a string, and
+        the answer is in the form of a string. We need to strip the answer of any leading or trailing
+        whitespace and replace any newline characters with spaces.
+        
+        After loading the data, we create a list of dictionaries, where each dictionary contains a
+        question and an answer. We then save this list to ES using the _save_to_es function.
         """
         dataset_array = CommonUtil.load_json_file(self.datasets_path["hwtcm-sft-v1"][0])
         
@@ -84,15 +132,24 @@ class LoadAndSaveToEs:
     def save_shennong_tcm_data(self):
         """
         Save the data from the shennong-tcm dataset to ES
+        
+        The data in the shennong-tcm dataset is in the form of a list of dictionaries, where each
+        dictionary contains a question and an answer. The question is in the form of a string, and
+        the answer is in the form of a list of strings. We need to split the question into multiple
+        parts and remove the parts that are not necessary.
         """
         dataset_array = CommonUtil.load_json_file(self.datasets_path["shennong-tcm"][0])
         
         qa_array = []
         for dataset in dataset_array:
             question = dataset["query"]
-            question = question.split("要求：")[0]
+            # Split the question into multiple parts
+            question_parts = question.split("要求：")
+            # Remove the parts that are not necessary
+            question = question_parts[0]
             
             answer = dataset["response"]
+            # Remove the newline characters and strip the leading and trailing spaces
             answer = answer.strip().replace("\n", " ")
             qa_array.append({
                 "question": question, 
@@ -101,52 +158,45 @@ class LoadAndSaveToEs:
                 })
         
         self._save_to_es(qa_array)
-        
-    def save_five_phases_mindset_data(self):
-        dataset_array = CommonUtil.load_json_file(self.datasets_path["five-phases-mindset"][0])
-        
-        qa_array = []
-        for dataset in dataset_array:
-            question = dataset["input"]
-            answer = dataset["output"]
-            answer = answer.strip().replace("\n", " ")
-            qa_array.append({
-                "question": question, 
-                "answer": answer,
-                "data_source": "five-phases-mindset"
-                })
-        
-        self._save_to_es(qa_array)
     
-    def _save_to_es(self,qa_array):
+    def _save_to_es(self, qa_array):
         """
         Save the question answer pairs to ES.
+
+        This function will split the input list into multiple parts and use multiple threads to
+        convert the text to vectors using the embedding model. After that, it will save the data to
+        ES.
 
         Args:
             qa_array (list): A list of question answer pairs in the form of a dictionary.
         """
         if qa_array:
-            qa_split_array = CommonUtil.split_array(qa_array,5)
-            search_threads,qa_batch_array = [],[]
+            # Split the input list into multiple parts
+            qa_split_array = CommonUtil.split_array(qa_array, 5)
+            search_threads, qa_batch_array = [], []
             
+            # Split the list again to create multiple threads
             qa_split_result = [
                 qa_split_array[0],
                 [item for sublist in qa_split_array[1:] for item in sublist]
             ]
             
+            # Create multiple threads to convert the text to vectors
             for idx, qa_split in enumerate(qa_split_result):
                 search_thread = threading.Thread(
-                    target=self._thread_to_get_vectors, 
-                    args=(qa_split, qa_batch_array,idx),
+                    target=self._thread_to_get_vectors,
+                    args=(qa_split, qa_batch_array, idx),
                     daemon=True
-                    )
+                )
                 search_threads.append(search_thread)
                 search_thread.start()
+            
+            # Wait for all threads to finish
             for search_thread in search_threads:
                 search_thread.join()
             
             # Save the data to ES
-            self.elastic.batch_insert(CU.TMP_ES_INDEX,qa_batch_array)
+            self.elastic.batch_insert(CU.TMP_ES_INDEX, qa_batch_array)
     
     def _thread_to_get_vectors(self,qa_split,qa_batch_array,flag):
         """
@@ -163,6 +213,7 @@ class LoadAndSaveToEs:
             # This is for the embedding model to use
             qa_json["gather_text"] = f"【问题】{qa_json['question']}【答案】{qa_json['answer']}"
             content = qa_json["gather_text"]
+            
             # Use the embedding model to convert the text to a vector
             vector_content = self._get_embedding(content, flag)
             if vector_content is None:
@@ -175,18 +226,30 @@ class LoadAndSaveToEs:
     
     def _get_embedding(self, content, flag):
         """
-        获取内容的embedding向量
+        A function that gets the embeddings of a given content.
+
+        This function takes a content string and a flag as input. 
+        The flag is used to decide which embedding model to use. 
+        If the length of the content is larger than 400, use the online service to get the embeddings.
+        Otherwise, use the local embedding model.
+
+        Args:
+            content (str): The content to get the embeddings for.
+            flag (int): A flag that is used to decide which embedding model to use.
+
+        Returns:
+            list or None: The embeddings of the content or None if the content is too long.
         """
         if flag == 0 or len(self.enc.encode(content)) >= 400:
+            # If the length of the content is larger than 400, use the online service to get the embeddings
             return CommonUtil.request_embedding(content)
         else:
+            # Use the local embedding model to get the embeddings
             embed_array = self.api.embedding_with_sync(self.embedding_model, [content])
             return embed_array[0] if embed_array else None
     
 if __name__ == "__main__":
     laste = LoadAndSaveToEs()
-    # laste.save_hwtcm_deepseek_data()
-    # laste.save_hwtcm_sft_data()
-    #laste.save_shennong_tcm_data()
-    #laste.save_five_phases_mindset_data()
-    pass
+    laste.save_hwtcm_deepseek_data()
+    laste.save_hwtcm_sft_data()
+    laste.save_shennong_tcm_data()

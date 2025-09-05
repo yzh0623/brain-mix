@@ -1,13 +1,21 @@
-import os
-import sys
-project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-sys.path.append(os.path.join(project_dir, 'utils'))
-
+"""
+Copyright (c) 2025 by Zhenhui Yuan All right reserved.
+FilePath: /brain-mix/nlp/datasets/score_and_keep_data.py
+Author: Zhenhui Yuan
+Date: 2025-09-05 09:56:19
+LastEditTime: 2025-09-05 14:29:07
+"""
 import re
 import time
 import random
 import math
 import threading
+
+import os
+import sys
+project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(os.path.join(project_dir, 'utils'))
+
 import const_util as CU
 from yaml_util import YamlUtil
 from api_util import ApiUtil
@@ -134,7 +142,7 @@ class ScoreAndKeepData:
             resp_array (list): The array to store the response.
         """
         # Get the prompt for the LLM
-        prompt_str = self._llm_get_score_prompts(gather_text)
+        prompt_str = CU.get_score_prompts(gather_text)
         
         digit_batch_count = 1
         # Keep trying until we get a valid score
@@ -168,21 +176,6 @@ class ScoreAndKeepData:
                 time.sleep(random.randint(15,30))
                 
             digit_batch_count += 1
-    
-    def _llm_get_score_prompts(self,qa_content):
-        return f"""
-            我将提供一条中医药领域的“问答对”（包含问题和回答）。  
-            你的任务是：  
-            1. 只根据问答对的完整性、准确性、逻辑性和专业性进行质量评估。  
-            2. 给出一个 **0 到 10 之间的分数**（10 分表示极高质量，0 分表示极低质量）。  
-            3. 只返回一个阿拉伯数字，不要输出任何解释或其他内容。  
-
-            问答对如下：  
-            
-            {qa_content}
-
-            请直接输出一个 0-10 的整数，不要输出任何解释或符号。
-        """
         
 if __name__ == "__main__":
     s = ScoreAndKeepData()

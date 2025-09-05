@@ -1,3 +1,10 @@
+"""
+Copyright (c) 2025 by Zhenhui Yuan All right reserved.
+FilePath: /brain-mix/nlp/datasets/delete_low_quality_data.py
+Author: Zhenhui Yuan
+Date: 2025-09-05 09:56:19
+LastEditTime: 2025-09-05 14:34:23
+"""
 
 import time
 from tqdm import tqdm
@@ -16,12 +23,18 @@ logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
 from persistence.elastic_util import ElasticUtil
 
-@DeprecationWarning
 class DeleteLowQualityData:
+    
     def __init__(self):
+        """
+        Initialize the DeleteLowQualityData class.
+        
+        This class will delete low quality data from the Elasticsearch index.
+        """
         self.elastic = ElasticUtil()
         self.dh = CleanUtil()
         
+        # Read the config file and get the config values
         elastic_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml')
         self.delete_conn = Elasticsearch(
             hosts=YamlUtil(elastic_cnf).get_value('persistence.elastic.host'),

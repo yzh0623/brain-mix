@@ -25,6 +25,20 @@ silicon:
   - <silicon_key>
   max_retries: 3
   agent:
+    generate_qaa:
+      prompt: "你是一位精通中医药学的知识专家，负责从古籍中提炼知识并生成问答。
+
+        你的任务是根据我提供的【古籍名称】和【内容片段】，生成10个独特且多样化的问答对。
+
+        请确保每个问答都紧密围绕【内容片段】，且答案可直接从片段中得出或合理推断。
+
+        注意：你的输出**必须是一个只包含JSON数组的文本**。不允许包含任何额外的文字、注释、解释、Markdown代码块（如```json```）、或任何非JSON内容。"
+      model: THUDM/GLM-4-9B-0414
+      options:
+        max_tokens: 6144
+        temperature: 0.4
+        top_p: 0.95
+        frequency_penalty: 0.1
     content_embedding:
       model: BAAI/bge-large-zh-v1.5
     content_score:
