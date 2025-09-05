@@ -6,4 +6,4 @@ TMP_ES_INDEX = "es_gather_qa"
 TMP_ES_VECTOR_FIELDS = "gather_vector_1024"
 
 # 评分开启的线程数
-SCORE_THREADS_SIZE = 5
+SCORE_THREADS_SIZE = 2
