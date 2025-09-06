@@ -53,7 +53,7 @@ silicon:
           enable_thinking: False
       glm:
         prompt: "你是一名专业的中医药知识问答质量评估员。"
-        model: THUDM/GLM-4-9B-0414
+        model: THUDM/glm-4-9b-chat
         options:
           max_tokens: 5
           temperature: 0.2

@@ -7,8 +7,6 @@ TMP_ES_VECTOR_FIELDS = "gather_vector_1024"
 
 TMP_MYSQL_TURNING_DATA_TABLE = "my_fine_turning_datas"
 
-# 评分开启的线程数
-SCORE_THREADS_SIZE = 3
 
 # 获取评分的提示词
 def get_score_prompts(qa_content):
