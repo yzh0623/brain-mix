@@ -1,3 +1,11 @@
+"""
+Copyright (c) 2025 by Zhenhui Yuan All right reserved.
+FilePath: /brain-mix/utils/logging_util.py
+Author: Zhenhui Yuan
+Date: 2025-09-05 09:56:19
+LastEditTime: 2025-09-07 13:12:19
+"""
+
 import logging
 from logging import Logger
 from logging.handlers import TimedRotatingFileHandler
@@ -26,7 +34,7 @@ class LoggingUtil(Logger):
             os.makedirs(logging_path)
             
         # 设置输出格式
-        formatter = logging.Formatter("[%(asctime)s] [%(process)d] [%(levelname)s] - %(module)s.%(funcName)s (%(filename)s:%(lineno)d) - %(message)s")
+        formatter = logging.Formatter("[%(asctime)s][%(levelname)s]-%(filename)s:%(funcName)s%(lineno)d - %(message)s")
 
         file_handler = TimedRotatingFileHandler(
             filename=os.path.join(logging_path,name), 

@@ -1,3 +1,11 @@
+"""
+Copyright (c) 2025 by Zhenhui Yuan All right reserved.
+FilePath: /brain-mix/utils/yaml_util.py
+Author: Zhenhui Yuan
+Date: 2025-09-05 09:56:19
+LastEditTime: 2025-09-07 13:14:03
+"""
+
 import yaml
 import threading
 

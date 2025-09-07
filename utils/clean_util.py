@@ -1,3 +1,11 @@
+"""
+Copyright (c) 2025 by Zhenhui Yuan All right reserved.
+FilePath: /brain-mix/utils/clean_util.py
+Author: Zhenhui Yuan
+Date: 2025-09-05 09:56:19
+LastEditTime: 2025-09-07 13:13:30
+"""
+
 from sklearn.cluster import DBSCAN
 import numpy as np
 import elasticsearch
@@ -6,7 +14,6 @@ from collections import defaultdict
 import os
 project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-from yaml_util import YamlUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
