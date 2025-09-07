@@ -3,9 +3,10 @@ Copyright (c) 2025 by Zhenhui Yuan All right reserved.
 FilePath: /brain-mix/nlp/datasets/1.load_and_save_to_es.py
 Author: Zhenhui Yuan
 Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-05 14:33:46
+LastEditTime: 2025-09-07 14:43:22
 """
 
+import json
 import os
 import sys
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -26,6 +27,7 @@ from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
 from persistence.elastic_util import ElasticUtil
+from persistence.mysql_util import MysqlUtil
 
 class LoadAndSaveToEs:
     
@@ -53,6 +55,8 @@ class LoadAndSaveToEs:
         The Elasticsearch client
         """
         self.elastic = ElasticUtil()
+        
+        self.mysql = MysqlUtil()
         
         """
         The DataEmbedding class is used to get the embedding of a given text.
@@ -158,7 +162,70 @@ class LoadAndSaveToEs:
                 })
         
         self._save_to_es(qa_array)
-    
+        
+    def mysql_turning_data_to_es(self):
+        """
+        Save the question answer pairs in the TMP_MYSQL_TURNING_DATA_TABLE table to ES.
+
+        This function will query the TMP_MYSQL_TURNING_DATA_TABLE table to get the records that
+        have not been processed (generate_flag = 0). It will then split the content of the records
+        into multiple parts and use multiple threads to convert the text to vectors using the
+        embedding model. After that, it will save the data to ES.
+
+        The generate_flag of the processed records will be updated to 1. The records that failed
+        to be processed will be updated to 2.
+        """
+        search_sql = f"""
+            select id,content,sources
+            from {CU.TMP_MYSQL_TURNING_DATA_TABLE}
+            where generate_flag = 0
+            limit 10000
+        """
+        counter = 1
+        results = self.mysql.query_by_list(search_sql)
+        while len(results)>0:
+            logger.info(f"Processing batch {counter}")
+            update_ids = []
+            update_not_ids = []
+            qa_array = []
+            
+            for id, content, sources in results:
+                try:
+                    # Try to parse the content as a JSON object
+                    json_content = json.loads(content)
+                    # If the content is a valid JSON object, append it to the qa_array
+                    qa_array.append({"question": json_content["question"], "answer": json_content["answer"],"data_source": sources})
+                    # Add the id to the update_ids list
+                    update_ids.append(id)
+                except:
+                    # If the content is not a valid JSON object, add the id to the update_not_ids list
+                    update_not_ids.append(id)
+                
+            if qa_array:
+                # Call the _save_to_es function to save the data to ES
+                self._save_to_es(qa_array)
+                # Update the generate_flag of the processed records to 1
+                if update_ids:
+                    update_sql = f"""
+                        update {CU.TMP_MYSQL_TURNING_DATA_TABLE}
+                        set generate_flag = 1
+                        where id in ({','.join(map(str, update_ids))})
+                    """
+                    self.mysql.save_or_update(update_sql)
+            
+            # Update the generate_flag of the failed records to 2
+            if update_not_ids:
+                update_sql = f"""
+                        update {CU.TMP_MYSQL_TURNING_DATA_TABLE}
+                        set generate_flag = 2
+                        where id in ({','.join(map(str, update_not_ids))})
+                    """
+                self.mysql.save_or_update(update_sql)    
+                    
+            # Query the database again to get the next batch of records
+            results = self.mysql.query_by_list(search_sql)
+            counter += 1
+            
     def _save_to_es(self, qa_array):
         """
         Save the question answer pairs to ES.
@@ -250,6 +317,7 @@ class LoadAndSaveToEs:
     
 if __name__ == "__main__":
     laste = LoadAndSaveToEs()
-    laste.save_hwtcm_deepseek_data()
-    laste.save_hwtcm_sft_data()
-    laste.save_shennong_tcm_data()
+    # laste.save_hwtcm_deepseek_data()
+    # laste.save_hwtcm_sft_data()
+    # laste.save_shennong_tcm_data()
+    laste.mysql_turning_data_to_es()
