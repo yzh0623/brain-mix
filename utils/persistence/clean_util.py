@@ -1,9 +1,9 @@
 """
 Copyright (c) 2025 by Zhenhui Yuan All right reserved.
-FilePath: /brain-mix/utils/clean_util.py
+FilePath: /brain-mix/utils/persistence/clean_util.py
 Author: Zhenhui Yuan
 Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-07 13:13:30
+LastEditTime: 2025-09-10 15:48:06
 """
 
 from sklearn.cluster import DBSCAN
@@ -12,7 +12,7 @@ import elasticsearch
 from tqdm import tqdm
 from collections import defaultdict
 import os
-project_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))

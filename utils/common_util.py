@@ -3,11 +3,10 @@ Copyright (c) 2025 by yuanzhenhui All right reserved.
 FilePath: /brain-mix/utils/common_util.py
 Author: yuanzhenhui
 Date: 2025-09-01 18:23:48
-LastEditTime: 2025-09-01 18:52:28
+LastEditTime: 2025-09-10 15:57:27
 """
 import json
 from pathlib import Path
-import requests
 
 class CommonUtil:
     
@@ -74,30 +73,3 @@ class CommonUtil:
         with open(file_path, 'r', encoding='utf-8') as file:
             data = json.load(file)
         return data
-    
-    @staticmethod
-    def request_embedding(text):
-        """
-        Request the embedding of a given text from the server.
-
-        This function sends a POST request to the server with the given text and
-        receives the embedding of the text in return.
-
-        Args:
-            text (str): The text to request the embedding for.
-
-        Returns:
-            list or None: The embedding of the text if the request was successful,
-                otherwise None.
-        """
-        ret_msg = None
-        url = "http://192.168.200.193:9807/api/text_to_baai_vector"
-        # Send the request
-        try:
-            respnse = requests.post(url, json={"text_array": [text], "use_large": True})
-            if respnse.status_code == 200:
-                # Parse the response
-                ret_msg = json.loads(respnse.text)["result"][0]
-        except Exception as e:
-            pass
-        return ret_msg

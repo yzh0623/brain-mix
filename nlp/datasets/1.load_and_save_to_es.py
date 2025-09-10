@@ -3,9 +3,12 @@ Copyright (c) 2025 by Zhenhui Yuan All right reserved.
 FilePath: /brain-mix/nlp/datasets/1.load_and_save_to_es.py
 Author: Zhenhui Yuan
 Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-07 14:43:22
+LastEditTime: 2025-09-10 16:08:27
 """
 
+from tqdm import tqdm
+import threading
+import requests
 import json
 import os
 import sys
@@ -15,19 +18,16 @@ sys.path.append(os.path.join(project_dir, 'nlp'))
 import tiktoken
 
 from common_util import CommonUtil
-from api_util import ApiUtil
-from tqdm import tqdm
 import const_util as CU
-import threading
 
+from persistence.elastic_util import ElasticUtil
+from persistence.mysql_util import MysqlUtil
+from thirdparty.silicon_util import SiliconUtil
 from models.embedding.data_embedding import DataEmbedding
 
 from yaml_util import YamlUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
-
-from persistence.elastic_util import ElasticUtil
-from persistence.mysql_util import MysqlUtil
 
 class LoadAndSaveToEs:
     
@@ -46,6 +46,8 @@ class LoadAndSaveToEs:
         nlp_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE , 'nlp_cnf.yml')
         base_path = YamlUtil(nlp_cnf).get_value('datasets.base_path')
         dirs_name = YamlUtil(nlp_cnf).get_value('datasets.dir_name')
+        
+        self.embeddings_url = YamlUtil(nlp_cnf).get_value('embeddings.url')
         self.datasets_path = {}
         for dir_name in dirs_name:
             folder_path = os.path.join(base_path, dir_name)
@@ -69,9 +71,9 @@ class LoadAndSaveToEs:
         self.enc = tiktoken.get_encoding("cl100k_base")
         
         """
-        The ApiUtil class is used to get the scores of a given text from the Silicon API.
+        The SiliconUtil class is used to get the scores of a given text from the Silicon API.
         """
-        self.api = ApiUtil()
+        self.api = SiliconUtil()
         
         utils_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE , 'utils_cnf.yml')
         self.embedding_model = YamlUtil(utils_cnf).get_value('silicon.agent.content_embedding.model')
@@ -309,11 +311,36 @@ class LoadAndSaveToEs:
         """
         if flag == 0 or len(self.enc.encode(content)) >= 400:
             # If the length of the content is larger than 400, use the online service to get the embeddings
-            return CommonUtil.request_embedding(content)
+            return self._request_embedding(content)
         else:
             # Use the local embedding model to get the embeddings
             embed_array = self.api.embedding_with_sync(self.embedding_model, [content])
             return embed_array[0] if embed_array else None
+    
+    def _request_embedding(self,text):
+        """
+        Request the embedding of a given text from the server.
+
+        This function sends a POST request to the server with the given text and
+        receives the embedding of the text in return.
+
+        Args:
+            text (str): The text to request the embedding for.
+
+        Returns:
+            list or None: The embedding of the text if the request was successful,
+                otherwise None.
+        """
+        ret_msg = None
+        # Send the request
+        try:
+            respnse = requests.post(self.embeddings_url, json={"text_array": [text], "use_large": True})
+            if respnse.status_code == 200:
+                # Parse the response
+                ret_msg = json.loads(respnse.text)["result"][0]
+        except Exception as e:
+            pass
+        return ret_msg
     
 if __name__ == "__main__":
     laste = LoadAndSaveToEs()

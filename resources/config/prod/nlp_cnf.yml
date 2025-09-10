@@ -32,3 +32,6 @@ datasets:
             type: integer
           data_source:
             type: keyword
+
+embeddings:
+  url: <embeddings_url>

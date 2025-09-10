@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan All right reserved.
 FilePath: /brain-mix/nlp/datasets/4.score_and_filter_data.py
 Author: Zhenhui Yuan
 Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-07 13:10:12
+LastEditTime: 2025-09-10 16:10:52
 """
 
 import re
@@ -17,13 +17,13 @@ import threading
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.append(os.path.join(project_dir, 'utils'))
 
+from thirdparty.silicon_util import SiliconUtil
+from persistence.elastic_util import ElasticUtil
+
 import const_util as CU
 from yaml_util import YamlUtil
-from api_util import ApiUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
-
-from persistence.elastic_util import ElasticUtil
 
 class ScoreAndFilterData:
     
@@ -34,8 +34,8 @@ class ScoreAndFilterData:
         # Get the Elasticsearch client
         self.elastic = ElasticUtil()
         
-        # Get the ApiUtil instance
-        self.api = ApiUtil()
+        # Get the SiliconUtil instance
+        self.api = SiliconUtil()
         
         # Read the Silicon API configuration
         silicon_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml')

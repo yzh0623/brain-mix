@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan All right reserved.
 FilePath: /brain-mix/nlp/datasets/2.mysql_to_turning.py
 Author: Zhenhui Yuan
 Date: 2025-09-05 10:24:16
-LastEditTime: 2025-09-05 17:02:41
+LastEditTime: 2025-09-10 16:09:44
 """
 
 import random
@@ -18,7 +18,7 @@ project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__
 sys.path.append(os.path.join(project_dir, 'utils'))
 
 from persistence.mysql_util import MysqlUtil
-from api_util import ApiUtil
+from thirdparty.silicon_util import SiliconUtil
 
 import const_util as CU
 from yaml_util import YamlUtil
@@ -28,7 +28,7 @@ logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 utils_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE , 'utils_cnf.yml')
 model_params = YamlUtil(utils_cnf).get_value('silicon.agent.generate_qaa')
 
-api = ApiUtil()
+api = SiliconUtil()
 myclient_local = MysqlUtil()
 
 class MysqlToTurning:

@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan All right reserved.
 FilePath: /brain-mix/nlp/datasets/3.delete_low_quality_data.py
 Author: Zhenhui Yuan
 Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-05 17:32:32
+LastEditTime: 2025-09-10 16:10:23
 """
 
 import time
@@ -16,7 +16,7 @@ project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__
 sys.path.append(os.path.join(project_dir, 'utils'))
 
 import const_util as CU
-from clean_util import CleanUtil
+from persistence.clean_util import CleanUtil
 from yaml_util import YamlUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
@@ -116,7 +116,6 @@ dlqd = DeleteLowQualityData()
 schedule.every(3).hours.do(dlqd.delete_similar_data)
 
 if __name__ == "__main__":
-    
     dlqd.delete_similar_data()
     while True:
         schedule.run_pending()

@@ -1,15 +1,27 @@
-# 激活环境配置
+# Activate environment configuration
 ACTIVATE="local"
 
-# 临时 elasticsearch 索引和字段
+# Temporary Elasticsearch Index and Fields
 TMP_ES_INDEX = "es_gather_qa"
 TMP_ES_VECTOR_FIELDS = "gather_vector_1024"
 
+# Temporary MySQL Table
 TMP_MYSQL_TURNING_DATA_TABLE = "my_fine_turning_datas"
 
-
-# 获取评分的提示词
 def get_score_prompts(qa_content):
+    """
+    Generate the prompts for scoring a QA pair.
+
+    The prompts will be used to ask a language model to score a QA pair
+    based on its quality.
+
+    Args:
+        qa_content (str): The QA pair content.
+
+    Returns:
+        str: The prompts for scoring a QA pair.
+    """
+    
     return f"""
         我将提供一条中医药领域的“问答对”（包含问题和回答）。  
         你的任务是：  
@@ -25,6 +37,18 @@ def get_score_prompts(qa_content):
     """
     
 def get_question_and_answer_prompts(message):
+    """
+    Generate the prompts for generating 10 questions and answers from a given message.
+
+    The prompts will be used to ask a language model to generate 10 questions and answers
+    based on a given message.
+
+    Args:
+        message (str): The message to generate questions and answers from.
+
+    Returns:
+        str: The prompts for generating 10 questions and answers.
+    """
     
     return f"""
 
@@ -49,5 +73,4 @@ def get_question_and_answer_prompts(message):
             {{"question": "问题9","answer": "答案9"}},
             {{"question": "问题10","answer": "答案10"}}
         ]
-
     """
