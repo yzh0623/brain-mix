@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan All right reserved.
 FilePath: /brain-mix/nlp/datasets/3.delete_low_quality_data.py
 Author: Zhenhui Yuan
 Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-10 16:10:23
+LastEditTime: 2025-09-15 09:02:52
 """
 
 import time
@@ -113,7 +113,7 @@ class DeleteLowQualityData:
         )
 
 dlqd = DeleteLowQualityData()        
-schedule.every(3).hours.do(dlqd.delete_similar_data)
+schedule.every(1).hours.do(dlqd.delete_similar_data)
 
 if __name__ == "__main__":
     dlqd.delete_similar_data()
