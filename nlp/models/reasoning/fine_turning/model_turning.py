@@ -3,9 +3,8 @@ Copyright (c) 2025 by yuanzhenhui All right reserved.
 FilePath: /brain-mix/nlp/models/reasoning/fine_turning/model_turning.py
 Author: yuanzhenhui
 Date: 2025-09-05 17:42:48
-LastEditTime: 2025-09-17 23:07:16
+LastEditTime: 2025-09-18 08:00:00
 """
-
 import os
 import sys
 import torch
@@ -13,13 +12,13 @@ import gc
 import shutil
 import time
 import json
-import random
+import optuna
 import numpy as np
 
-from typing import Dict, List, Optional
-from itertools import product
+from typing import Dict, Optional
 from datasets import Dataset, DatasetDict
 from unsloth import FastLanguageModel
+from unsloth.chat_templates import train_on_responses_only
 from trl import SFTTrainer
 from transformers import TrainingArguments
 
@@ -27,390 +26,385 @@ project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os
 sys.path.append(os.path.join(project_dir, 'utils'))
 
 import const_util as CU
-from training_monitor import TrainingMonitor
 from yaml_util import YamlUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
+
 class ModelTurning:
 
     def __init__(self, **kwargs) -> None:
-        """
-        Initialize the ModelTurning class.
-        
-        The ModelTurning class is used to fine-tune a pre-trained model using the T4 optimization algorithm.
-        
-        :param kwargs: Optional keyword arguments for the initialization of the class.
-        :return: None
-        """
         self.model_cnf_yml = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'nlp_cnf.yml')
         self.model_cnf = YamlUtil(self.model_cnf_yml)
         self.base_model = self.model_cnf.get_value('models.reasoning.origin_model')
         self.turning_path = os.path.join(self.model_cnf.get_value('datasets.train_base_path'), self.model_cnf.get_value('datasets.turning_path'))
-        
-        # Load the configuration from the YAML file
+
         self.load_configurations()
-        
-        # Set up the T4 optimization algorithm
-        self.setup_tesla_t4_optimization()
-        
-        # Initialize the training monitor
-        self.training_monitor = TrainingMonitor()
+        self.setup_gpu_optimization()
+
+        self.dataset_dict = None
+        self.output_dir = None
 
     def load_configurations(self):
         """
-        Load the configuration from the YAML file.
+        Load configurations from the YAML file for fine-tuning.
 
-        This method loads the configuration from the YAML file and sets up the hyperparameters for the model.
+        This function loads the following configurations:
 
-        :return: None
-        """
-        
-        # Load the default hyperparameters
-        self.default_params = {
-            # Gradient accumulation steps (default: 1)
-            'gradient_accumuation_steps': self.model_cnf.get_value('models.reasoning.finetuning.default.gradient_accumuation_steps'),
-            
-            # Per-device batch size for training (default: 16)
-            'per_device_train_batch_size': self.model_cnf.get_value('models.reasoning.finetuning.default.per_device_train_batch_size'),
-            
-            # Maximum sequence length (default: 512)
-            'max_seq_length': self.model_cnf.get_value('models.reasoning.finetuning.default.max_seq_length'),
-            
-            # Warmup steps (default: 500)
-            'warmup_steps': self.model_cnf.get_value('models.reasoning.finetuning.default.warmup_steps'),
-            
-            # Maximum steps (default: 25000)
-            'max_steps': self.model_cnf.get_value('models.reasoning.finetuning.default.max_steps'),
-            
-            # Learning rate (default: 5e-5)
-            'learning_rate': self.model_cnf.get_value('models.reasoning.finetuning.default.learning_rate'),
-            
-            # Weight decay (default: 0.01)
-            'weight_decay': self.model_cnf.get_value('models.reasoning.finetuning.default.weight_decay'),
-        }
-        
-        # Load the dataset size and validation split
-        self.dataset_size = self.model_cnf.get_value('models.reasoning.finetuning.dataset_size')
-        self.validation_split = self.model_cnf.get_value('models.reasoning.finetuning.validation_split')
-        self.data_shuffle = self.model_cnf.get_value('models.reasoning.finetuning.data_shuffle')
-        
-        # Load the search strategy and max trials
-        self.search_strategy = self.model_cnf.get_value('models.reasoning.finetuning.search_strategy')
-        self.max_trials = self.model_cnf.get_value('models.reasoning.finetuning.max_trials')
-        self.early_stopping_patience = self.model_cnf.get_value('models.reasoning.finetuning.early_stopping_patience')
-        
-        # Load the search space based on the search strategy
-        if self.search_strategy == 'comprehensive':
-            self.search_space = self.model_cnf.get_value('models.reasoning.finetuning.performance.comprehensive_search')
-        else:
-            self.search_space = self.model_cnf.get_value('models.reasoning.finetuning.performance.smart_search')
-            
-        # Load the target modules
-        self.target_modules = self.model_cnf.get_value('models.reasoning.finetuning.performance.target_modules')
-        
-        # Load the optimization and dataloader configurations
-        self.optimization_config = self.model_cnf.get_value('models.reasoning.finetuning.optimization')
-        self.dataloader_config = self.model_cnf.get_value('models.reasoning.finetuning.dataloader')
-
-    def setup_tesla_t4_optimization(self):
-        """
-        Set up the environment for using the Tesla T4 GPU.
-
-        This method sets up the environment for using the Tesla T4 GPU, including setting the CUDA memory allocation configuration and enabling the use of Flash Attention.
+        - dataset_size: The size of the dataset to be used for fine-tuning.
+        - max_trials: The maximum number of trials to be performed during fine-tuning.
+        - warmup_steps: The number of warmup steps to be performed during fine-tuning.
+        - search_space: The search space to be used during fine-tuning, depending on the search strategy.
+        - target_modules: The target modules to be fine-tuned.
+        - optimization_config: The optimization configuration for fine-tuning.
+        - dataloader_config: The dataloader configuration for fine-tuning.
 
         :return: None
         """
-        if torch.cuda.is_available():
-            # Empty the CUDA cache to free up memory
-            torch.cuda.empty_cache()
-            
-            # Tesla T4 不支持 TF32，必须禁用
-            torch.backends.cuda.matmul.allow_tf32 = False
-            torch.backends.cudnn.allow_tf32 = False
-            
-            # Benchmark the kernels to find the fastest version
-            torch.backends.cudnn.benchmark = True
-            
-            # Disable the deterministic convolution algorithm
-            torch.backends.cudnn.deterministic = False
-            
-            # Get the properties of the GPU
-            gpu_props = torch.cuda.get_device_properties(0)
-            
-            # Get the name of the GPU
-            gpu_name = gpu_props.name
-            
-            # Get the total memory of the GPU in GB
-            gpu_memory = gpu_props.total_memory / 1024**3
-            
-            # Log the information about the GPU
-            logger.info(f"GPU: {gpu_name}")
-            logger.info(f"Memory: {gpu_memory:.1f}GB")
-            logger.info(f"CUDA capability: {gpu_props.major}.{gpu_props.minor}")
-            
-            # Tesla T4 specific settings
-            os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
-            
-            # Tesla T4 has compute capability 7.5, supports Flash Attention
-            self.use_flash_attention = gpu_props.major >= 7
-            if self.use_flash_attention:
-                logger.info("Flash Attention available")
-            
-            # 检测实际支持的精度
-            logger.info(f"BF16 support: {torch.cuda.is_bf16_supported()}")  # T4不支持
-            logger.info(f"FP16 support: True")  # T4支持FP16
+        self.finetuning_config = self.model_cnf.get_value('models.reasoning.finetuning')
+        self.max_trials = self.finetuning_config.get('max_trials', 24)
+        self.default_params = self.finetuning_config.get('default', {})
+        self.search_space_config = self.finetuning_config.get('performance').get("search_space")
+        self.target_modules = self.finetuning_config.get('performance').get("target_modules")
+        self.optimization_config = self.finetuning_config.get('optimization')
+        self.dataloader_config = self.finetuning_config.get('dataloader')
+
+    def setup_gpu_optimization(self):
+        """
+        Setup GPU optimization for training.
+
+        This function checks if a CUDA device is available and setups the
+        computation type and whether to use bfloat16 for the training.
+
+        :return: None
+        """
+
+        # The computation type to be used during training.
+        self.compute_dtype = torch.float16
+        # Whether to use bfloat16 during training.
+        self.use_bf16 = False
+
+        if not torch.cuda.is_available():
+            logger.warning("未检测到CUDA设备，将使用CPU进行训练。")
+            return
+
+        torch.cuda.empty_cache()
+
+        # Get the properties of the CUDA device.
+        gpu_props = torch.cuda.get_device_properties(0)
+        logger.info(f"检测到 GPU: {gpu_props.name}, 显存: {gpu_props.total_memory / 1024**3:.1f}GB, CUDA 计算能力: {gpu_props.major}.{gpu_props.minor}")
+        if gpu_props.major >= 8:
+            logger.info("检测到 Ampere 或更高架构的 GPU。启用 TF32 并优先使用 bfloat16。")
+            torch.backends.cuda.matmul.allow_tf32 = True
+            torch.backends.cudnn.allow_tf32 = True
+            if torch.cuda.is_bf16_supported():
+                self.compute_dtype = torch.bfloat16
+                self.use_bf16 = True
+        torch.backends.cudnn.benchmark = True
 
     def load_training_data_from_json(self) -> Optional[DatasetDict]:
         """
-        Load the training data from the JSON file.
+        Load the training data from the given JSON file.
 
-        This function loads the training data from the JSON file and returns a DatasetDict object.
-        If the validation set exists, it will also be loaded.
+        This function loads the training data from the given JSON file and
+        returns a DatasetDict object containing the training data.
 
-        :return: A DatasetDict object containing the training and validation sets, or None if an error occurs.
+        :return: A DatasetDict object containing the training data, or None if an error occurred.
         """
         try:
-            # Load the training set from the JSON file
+            # Load the training data from the JSON file
             train_path = os.path.join(self.turning_path, "train_dataset.json")
-            with open(train_path, 'r', encoding='utf-8') as f:
-                train_data = json.load(f)
-            logger.info(f"Load training datasets: {len(train_data)} rows")
-            formatted_train_data = self.format_dataset_for_qwen(train_data)
-            
-            # Load the validation set from the JSON file if it exists
+            with open(train_path, 'r', encoding='utf-8') as f: train_data = json.load(f)
+            logger.info(f"加载训练数据集: {len(train_data)} 条")
+
+            # Load the validation data from the JSON file if it exists
             val_path = os.path.join(self.turning_path, "validation_dataset.json")
             if os.path.exists(val_path):
-                with open(val_path, 'r', encoding='utf-8') as f:
-                    val_data = json.load(f)
-                logger.info(f"Load validation datasets: {len(val_data)} rows")
-                formatted_val_data = self.format_dataset_for_qwen(val_data)
-                dataset_dict = DatasetDict({'train': Dataset.from_list(formatted_train_data),'validation': Dataset.from_list(formatted_val_data)})
+                with open(val_path, 'r', encoding='utf-8') as f: val_data = json.load(f)
+                logger.info(f"加载验证数据集: {len(val_data)} 条")
+                dataset_dict = DatasetDict({'train': Dataset.from_list(train_data), 'validation': Dataset.from_list(val_data)})
             else:
-                dataset_dict = DatasetDict({'train': Dataset.from_list(formatted_train_data)})
+                dataset_dict = DatasetDict({'train': Dataset.from_list(train_data)})
             return dataset_dict
         except Exception as e:
-            logger.error(f"Load datasets failus: {str(e)}")
+            logger.error(f"加载数据集失败: {str(e)}")
             return None
 
-    def get_hyperparameter_combinations(self) -> List[Dict]:
+    def format_dataset_with_chat_template(self, dataset, tokenizer):
         """
-        Get all the hyperparameter combinations.
+        Format the dataset with a chat template.
 
-        If the search strategy is 'smart', return the first `max_trials` combinations.
-        If the search strategy is 'comprehensive', return all the combinations by using the `product` function from the `itertools` module.
+        This function formats the dataset with a chat template by applying the chat template to
+        the messages in the dataset.
 
-        :return: A list of dictionaries, where each dictionary represents a hyperparameter combination.
+        :param dataset: The dataset to format.
+        :param tokenizer: The tokenizer to use.
+        :return: The formatted dataset.
         """
-        if self.search_strategy == 'smart':
-            # If the search strategy is 'smart', return the first 'max_trials' combinations
-            return self.search_space[:self.max_trials]
-        else:
-            # If the search strategy is 'comprehensive', return all the combinations by using the 'product' function from the 'itertools' module
-            keys, values = zip(*self.search_space.items())
-            all_combinations = [dict(zip(keys, v)) for v in product(*values)]
-            
-            if len(all_combinations) > self.max_trials:
-                # If there are more combinations than the maximum number of trials, shuffle the combinations and select the first 'max_trials' combinations
-                random.shuffle(all_combinations)
-                all_combinations = all_combinations[:self.max_trials]
-                logger.info(f"Randomly select {self.max_trials} combinations from {len(list(product(*values)))} combinations")
-            return all_combinations
+        def format_prompt(examples):
+            """
+            Format a single prompt with a chat template.
 
-    def run_training_with_validation(self, model, tokenizer, dataset_dict, output_dir, hyperparameters):
+            :param examples: The prompt to format.
+            :return: The formatted prompt.
+            """
+            return tokenizer.apply_chat_template(examples['messages'], tokenize=False)
+        return dataset.map(lambda x: {"text": format_prompt(x)}, num_proc=os.cpu_count() // 2 or 1)
+
+    def run_training_session(self, model, tokenizer, dataset_dict, output_dir, hyperparameters):
         """
-        Run training with validation.
+        Run a training session with the given model, tokenizer, dataset, output directory, and hyperparameters.
 
-        This function runs training with validation using the given model, tokenizer, dataset dictionary, output directory, and hyperparameters.
+        This function formats the dataset with a chat template, creates a TrainingArguments object with the given hyperparameters,
+        creates a SFTTrainer object, trains the model, evaluates the model if a validation dataset is provided,
+        saves the model, and returns the training loss, evaluation loss, and training time.
 
-        Parameters:
-            model (torch.nn.Module): The model to be trained.
-            tokenizer (transformers.PreTrainedTokenizer): The tokenizer used for tokenizing the input data.
-            dataset_dict (dict): A dictionary containing the training and validation datasets.
-            output_dir (str): The directory where the trained model will be saved.
-            hyperparameters (dict): A dictionary containing the hyperparameters for training.
-
-        Returns:
-            dict: A dictionary containing the training loss, evaluation loss, training time, and total steps.
+        :param model: The model to train.
+        :param tokenizer: The tokenizer to use.
+        :param dataset_dict: The dataset to train.
+        :param output_dir: The output directory to save the model.
+        :param hyperparameters: The hyperparameters to use for training.
+        :return: A dictionary containing the training loss, evaluation loss, and training time.
         """
+        # Format the dataset with a chat template
+        formatted_dataset_dict = DatasetDict()
+        formatted_dataset_dict['train'] = self.format_dataset_with_chat_template(dataset_dict['train'], tokenizer)
+        if 'validation' in dataset_dict:
+            formatted_dataset_dict['validation'] = self.format_dataset_with_chat_template(dataset_dict['validation'], tokenizer)
 
-        batch_size = int(hyperparameters.get("per_device_train_batch_size", 4))
-        grad_accum = int(hyperparameters.get("gradient_accumulation_steps", 4))
-        max_steps = int(hyperparameters.get("max_steps", 500))
-        warmup_steps = int(self.default_params['warmup_steps'])
-        learning_rate = float(hyperparameters.get("learning_rate", 2e-4))
-        weight_decay = float(self.default_params['weight_decay'])
-
+        # Create a TrainingArguments object with the given hyperparameters
         training_args = TrainingArguments(
             output_dir=output_dir,
-            per_device_train_batch_size=batch_size,
-            per_device_eval_batch_size=batch_size,
-            gradient_accumulation_steps=grad_accum,
-            warmup_steps=warmup_steps,
-            max_steps=max_steps,
-            learning_rate=learning_rate,
-            
-            fp16=True,  # T4支持FP16
-            bf16=False,  # T4不支持BF16
-            
+            per_device_train_batch_size=int(hyperparameters.get("per_device_train_batch_size")),
+            gradient_accumulation_steps=int(hyperparameters.get("gradient_accumulation_steps")),
+            warmup_steps=int(self.default_params.get('warmup_steps', 100)),
+            max_steps=int(hyperparameters.get("max_steps")),
+            learning_rate=float(hyperparameters.get("learning_rate")),
+            fp16=not self.use_bf16,
+            bf16=self.use_bf16,
             logging_steps=50,
             save_steps=200,
-            eval_steps=200 if 'validation' in dataset_dict else None,
-            
-            optim="adamw_8bit",  # 使用8bit优化器节省显存
-            weight_decay=weight_decay,
-            lr_scheduler_type="cosine",  # 简化学习率调度器
-            
+            eval_steps=200 if 'validation' in formatted_dataset_dict else None,
+            optim=self.optimization_config.get("optimizer", "adamw_8bit"),
+            lr_scheduler_type=self.optimization_config.get("lr_scheduler_type", "cosine"),
             seed=42,
-            save_total_limit=2,
-            load_best_model_at_end=False,
-            metric_for_best_model="loss" if 'validation' in dataset_dict else None,
-            greater_is_better=False,
-            
-            dataloader_num_workers=2,  # 减少worker数量避免内存问题
-            dataloader_pin_memory=True,
-            
+            save_total_limit=1,
+            dataloader_num_workers=self.dataloader_config.get("num_workers", 2),
             gradient_checkpointing=True,
-            group_by_length=True,
-            
-            # 移除 length_column_name 和 half_precision_backend
-            remove_unused_columns=False,
-            report_to="none",  # 禁用 wandb 等报告
-            push_to_hub=False  # 不推送到 hub
+            report_to="none"
         )
-        
+
+        # Create a SFTTrainer object
         trainer = SFTTrainer(
             model=model,
             tokenizer=tokenizer,
-            train_dataset=dataset_dict['train'],
-            eval_dataset=dataset_dict.get('validation'),
+            train_dataset=formatted_dataset_dict['train'],
+            eval_dataset=formatted_dataset_dict.get('validation'),
             dataset_text_field="text",
-            max_seq_length=hyperparameters.get("max_seq_length", 2048),
+            max_seq_length=int(hyperparameters.get("max_seq_length")),
             args=training_args,
             packing=False
         )
-        
+
+        # Train the model
         start_time = time.time()
+        trainer = train_on_responses_only(trainer,instruction_part="<|im_start|>user\n",response_part="<|im_start|>assistant\n")
         train_result = trainer.train()
         training_time = time.time() - start_time
-        
+
+        # Evaluate the model if a validation dataset is provided
         eval_loss = None
-        if 'validation' in dataset_dict:
+        if 'validation' in formatted_dataset_dict:
             eval_results = trainer.evaluate()
             eval_loss = eval_results.get('eval_loss', None)
-        
+
+        # Save the model
         trainer.save_model(output_dir)
-        tokenizer.save_pretrained(output_dir)
-        
-        del trainer
+
+        # Clean up
+        del trainer, formatted_dataset_dict
         gc.collect()
         torch.cuda.empty_cache()
-        
+
+        # Return the training loss, evaluation loss, and training time
         return {
             'train_loss': train_result.training_loss,
             'eval_loss': eval_loss,
-            'training_time': training_time,
-            'total_steps': train_result.global_step
+            'training_time': training_time
         }
 
-    def save_markdown_report(self, report, save_dir):
+    def objective(self, trial: optuna.Trial) -> float:
         """
-        Save the training report in markdown format.
+        This function is the objective function that Optuna will use to evaluate the performance of the model.
+
+        It takes a trial object as an argument and returns a float value representing the performance of the model.
+
+        The function first loads the model and tokenizer using the hyperparameters suggested by Optuna.
+        Then, it runs the training session and evaluates the model on the validation set if provided.
+        Finally, it returns the evaluation loss or the training loss if the evaluation loss is not available.
 
         Args:
-            report (dict): The training report.
-            save_dir (str): The directory to save the report.
+            trial (optuna.Trial): The trial object that contains the hyperparameters suggested by Optuna.
 
         Returns:
-            None
+            float: The evaluation loss or the training loss if the evaluation loss is not available.
         """
-        md_path = os.path.join(save_dir, "training_report.md")
-        
-        with open(md_path, 'w', encoding='utf-8') as f:
-            f.write("# 模型训练报告\n\n")
-            
-            # Write the generation date
-            f.write(f"**生成时间**: {report['training_summary']['date']}\n\n")
-            
-            # Write the training summary
-            f.write("## 训练概况\n\n")
-            
-            # Write the hardware used for training
-            f.write(f"- **硬件**: {report['training_summary']['hardware']}\n")
-            
-            # Write the base model used for training
-            f.write(f"- **基础模型**: {report['training_summary']['base_model']}\n")
-            
-            # Write the dataset size
-            f.write(f"- **数据集大小**: {report['training_summary']['dataset_size']:,}\n")
-            
-            # Write the total training rounds
-            f.write(f"- **训练轮次**: {report['training_summary']['total_rounds']}\n")
-            
-            # Write the total training time
-            f.write(f"- **总训练时间**: {report['training_summary']['total_training_time']}\n\n")
-            
-            # Write the best model
-            f.write("## 最佳模型\n\n")
-            
-            # Write the round of the best model
-            f.write(f"- **轮次**: {report['best_model']['round']}\n")
-            
-            # Write the training loss of the best model
-            f.write(f"- **训练损失**: {report['best_model']['train_loss']:.4f}\n")
-            
-            # Write the evaluation loss of the best model if exists
-            if report['best_model']['eval_loss']:
-                f.write(f"- **验证损失**: {report['best_model']['eval_loss']:.4f}\n")
-                
-            # Write the training time of the best model
-            f.write(f"- **训练时间**: {report['best_model']['training_time']}\n\n")
-            
-            # Write the hyperparameters of the best model
-            f.write("### 超参数\n\n")
-            
-            # Iterate over the hyperparameters and write them to the file
-            for key, value in report['best_model']['hyperparameters'].items():
-                f.write(f"- **{key}**: {value}\n")
+        try:
+            # Get the hyperparameters suggested by Optuna
+            hyperparameters = {
+                key: trial.suggest_categorical(key, value['choices'])
+                for key, value in self.search_space_config.items()
+            }
 
-    def save_comprehensive_report(self, all_results, best_model_info, save_dir):
+            # Print the hyperparameters
+            logger.info(f"\n{'='*60}\nTrial {trial.number}/{self.max_trials} - Optuna 建议参数:")
+            logger.info(json.dumps(hyperparameters, indent=2))
+
+            # Run the training session with the hyperparameters
+            current_hyperparameters = hyperparameters.copy()
+            while True:
+                try:
+                    # Load the model and tokenizer
+                    model, tokenizer = FastLanguageModel.from_pretrained(
+                        model_name=self.base_model,
+                        max_seq_length=int(current_hyperparameters.get('max_seq_length')),
+                        dtype=self.compute_dtype,
+                        load_in_4bit=True
+                    )
+
+                    # Get the PEFT model
+                    model = FastLanguageModel.get_peft_model(
+                        model,
+                        r=int(current_hyperparameters.get('r')),
+                        target_modules=self.target_modules,
+                        lora_alpha=int(current_hyperparameters.get('lora_alpha')),
+                        lora_dropout=0.0,
+                        bias="none",
+                        use_gradient_checkpointing="unsloth",
+                        random_state=42
+                    )
+
+                    # Run the training session
+                    current_model_path = os.path.join(self.output_dir, f"trial_{trial.number}")
+                    results = self.run_training_session(model, tokenizer, self.dataset_dict, current_model_path, current_hyperparameters)
+
+                    # Get the score (evaluation loss or training loss)
+                    score = results.get('eval_loss') if results.get('eval_loss') is not None else results.get('train_loss', float('inf'))
+
+                    # Set the user attributes
+                    trial.set_user_attr("model_path", current_model_path)
+                    trial.set_user_attr("full_results", {**results, "hyperparameters": current_hyperparameters})
+
+                    # Print the results
+                    logger.info(f"Trial {trial.number} 完成。得分 (Loss): {score:.4f}")
+
+                    # Clean up
+                    del model, tokenizer
+                    gc.collect()
+                    torch.cuda.empty_cache()
+
+                    return score
+
+                except torch.cuda.OutOfMemoryError:
+                    # Clean up
+                    gc.collect()
+                    torch.cuda.empty_cache()
+
+                    # Update the hyperparameters
+                    current_batch_size = int(current_hyperparameters.get("per_device_train_batch_size"))
+                    if current_batch_size > 1:
+                        new_batch_size = max(1, current_batch_size // 2)
+                        current_hyperparameters["per_device_train_batch_size"] = new_batch_size
+                        logger.warning(f"OOM: 尝试将 batch_size 降低到 {new_batch_size} 后重试。")
+                    else:
+                        logger.error("OOM: batch_size 已经降低到 1，无法继续运行。")
+                        raise optuna.exceptions.TrialPruned()
+
+                except Exception as e:
+                    # Print the error message
+                    logger.error(f"Trial {trial.number} 发生未知严重错误: {str(e)}", exc_info=True)
+                    raise optuna.exceptions.TrialPruned()
+
+        except Exception as e:
+            logger.error(f"在 objective 函数中捕获到意外错误: {e}")
+            return float('inf')
+
+    def save_comprehensive_report(self, study: optuna.Study, save_dir: str):
         """
-        Save the comprehensive report of the model training process.
+        Save the comprehensive report of the hyperparameter optimization study to a JSON file and a Markdown file.
 
         Args:
-            all_results (list): A list of dictionaries containing the results of each hyperparameter combination.
-            best_model_info (dict): A dictionary containing the information of the best model.
-            save_dir (str): The directory to save the report.
-
-        Returns:
-            None
+            study (optuna.Study): The Optuna study object.
+            save_dir (str): The directory where the report will be saved.
         """
-        train_losses = [r['train_loss'] for r in all_results]
-        eval_losses = [r['eval_loss'] for r in all_results if r['eval_loss'] is not None]
-        training_times = [r['training_time'] for r in all_results]
-        
+        logger.info("正在生成最终的训练报告...")
+
+        all_results = []
+        for trial in study.trials:
+            if trial.state == optuna.trial.TrialState.COMPLETE and "full_results" in trial.user_attrs:
+                results = trial.user_attrs["full_results"]
+                result_info = {
+                    # Trial number
+                    'trial_number': trial.number,
+                    # Evaluation loss of the trial
+                    'score': trial.value,
+                    # Training loss of the trial
+                    'train_loss': results.get('train_loss'),
+                    # Evaluation loss of the trial (if available)
+                    'eval_loss': results.get('eval_loss'),
+                    # Training time of the trial in seconds
+                    'training_time_seconds': results.get('training_time'),
+                    # Hyperparameters of the trial
+                    'hyperparameters': results.get('hyperparameters'),
+                    # Path to the model of the trial
+                    'model_path': trial.user_attrs.get("model_path"),
+                }
+                all_results.append(result_info)
+
+        if not all_results:
+            logger.warning("未找到任何成功的训练试验，无法生成报告。")
+            return
+
+        best_trial = study.best_trial
+        if not best_trial or "full_results" not in best_trial.user_attrs:
+            logger.error("未能找到最佳试验或其结果不完整，报告可能不准确。")
+            best_model_info_dict = min(all_results, key=lambda x: x['score'])
+        else:
+            best_results = best_trial.user_attrs["full_results"]
+            best_model_info_dict = {
+                # Trial number of the best trial
+                'trial_number': best_trial.number,
+                # Evaluation loss of the best trial
+                'score': best_trial.value,
+                # Training loss of the best trial
+                'train_loss': best_results.get('train_loss'),
+                # Evaluation loss of the best trial (if available)
+                'eval_loss': best_results.get('eval_loss'),
+                # Training time of the best trial in seconds
+                'training_time_seconds': best_results.get('training_time'),
+                # Hyperparameters of the best trial
+                'hyperparameters': best_results.get('hyperparameters'),
+            }
+
+        train_losses = [r['train_loss'] for r in all_results if r.get('train_loss')]
+        eval_losses = [r['eval_loss'] for r in all_results if r.get('eval_loss')]
+        training_times = [r['training_time_seconds'] for r in all_results if r.get('training_time_seconds')]
+
         report = {
             "training_summary": {
                 "date": time.strftime("%Y-%m-%d %H:%M:%S"),
-                "hardware": "Tesla T4",
                 "base_model": self.base_model,
-                "dataset_size": self.dataset_size,
-                "total_rounds": len(all_results),
+                "total_trials_requested": self.max_trials,
+                "total_trials_completed": len(all_results),
                 "total_training_time": f"{sum(training_times)/3600:.2f} hours",
             },
-            "best_model": {
-                "round": best_model_info['round'],
-                "train_loss": best_model_info['train_loss'],
-                "eval_loss": best_model_info.get('eval_loss'),
-                "training_time": f"{best_model_info['training_time']/60:.1f} minutes",
-                "hyperparameters": best_model_info['hyperparameters']
-            },
+            "best_model": best_model_info_dict,
             "statistics": {
                 "train_loss": {
-                    "min": min(train_losses),
-                    "max": max(train_losses),
-                    "mean": np.mean(train_losses),
-                    "std": np.std(train_losses)
+                    "min": min(train_losses) if train_losses else None,
+                    "max": max(train_losses) if train_losses else None,
+                    "mean": np.mean(train_losses) if train_losses else None,
+                    "std": np.std(train_losses) if train_losses else None
                 },
                 "eval_loss": {
                     "min": min(eval_losses) if eval_losses else None,
@@ -418,222 +412,180 @@ class ModelTurning:
                     "mean": np.mean(eval_losses) if eval_losses else None,
                     "std": np.std(eval_losses) if eval_losses else None
                 },
-                "training_time": {
-                    "min": f"{min(training_times)/60:.1f} min",
-                    "max": f"{max(training_times)/60:.1f} min",
-                    "mean": f"{np.mean(training_times)/60:.1f} min"
+                "training_time_minutes": {
+                    "min": f"{min(training_times)/60:.1f}" if training_times else None,
+                    "max": f"{max(training_times)/60:.1f}" if training_times else None,
+                    "mean": f"{np.mean(training_times)/60:.1f}" if training_times else None
                 }
             },
-            "all_results": sorted(all_results, key=lambda x: x.get('eval_loss', x['train_loss']))
+            "all_trials_sorted": sorted(all_results, key=lambda x: x['score'])
         }
-        
+
         report_path = os.path.join(save_dir, "training_report.json")
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
-        
-        self.save_markdown_report(report, save_dir)
-        logger.info(f"The training report is saved at: {report_path}")
 
-    def format_dataset_for_qwen(self,data_list):
-        formatted_data = []
-    
-        for idx, item in enumerate(data_list):
-            try:
-                if "messages" in item and isinstance(item["messages"], list) and len(item["messages"]) >= 2:
-                    user_content = str(item["messages"][0].get("content", ""))  # 确保是字符串
-                    assistant_content = str(item["messages"][1].get("content", ""))  # 确保是字符串
-                    
-                    # 清理内容
-                    user_content = user_content.strip()
-                    assistant_content = assistant_content.strip()
-                    
-                    # 跳过空内容
-                    if not user_content or not assistant_content:
-                        logger.warning(f"Skipping empty content at index {idx}")
-                        continue
-                    
-                    # Qwen2.5 的对话模板格式
-                    formatted_text = f"<|im_start|>system\n你是一位精通中医药学的AI助手。<|im_end|>\n"
-                    formatted_text += f"<|im_start|>user\n{user_content}<|im_end|>\n"
-                    formatted_text += f"<|im_start|>assistant\n{assistant_content}<|im_end|>"
-                    
-                    formatted_item = {
-                        "text": formatted_text,  # 确保是字符串
-                        "input_ids": None,  # 让 trainer 自己处理 tokenization
-                        "labels": None,  # 让 trainer 自己处理 labels
-                    }
-                    
-                    formatted_data.append(formatted_item)
-                else:
-                    logger.warning(f"Invalid data format at index {idx}: {item}")
-                    
-            except Exception as e:
-                logger.error(f"Error processing item at index {idx}: {str(e)}")
-                continue
+        self.save_markdown_report(report, save_dir)
+        logger.info(f"✓ 详细的训练报告已保存至: {save_dir}")
+
+    def save_markdown_report(self, report: Dict, save_dir: str):
         
-        logger.info(f"Formatted {len(formatted_data)} samples for training")
-        return formatted_data
+        md_path = os.path.join(save_dir, "training_report.md")
+        with open(md_path, 'w', encoding='utf-8') as f:
+            f.write("# 智能超参数优化训练报告\n\n")
+
+            summary = report['training_summary']
+            f.write("## 1. 训练概览\n\n")
+            f.write(f"- **生成时间**: {summary['date']}\n")
+            f.write(f"- **硬件平台**: {summary['hardware']}\n")
+            f.write(f"- **基础模型**: `{summary['base_model']}`\n")
+            f.write(f"- **请求试验次数**: {summary['total_trials_requested']}\n")
+            f.write(f"- **成功完成次数**: {summary['total_trials_completed']}\n")
+            f.write(f"- **总训练耗时**: {summary['total_training_time']}\n\n")
+
+            best_model = report['best_model']
+            f.write("## 2. 最佳模型详情\n\n")
+            f.write(f"- **最佳试验编号**: `Trial #{best_model['trial_number']}`\n")
+            f.write(f"- **最终得分 (Loss)**: **{best_model['score']:.4f}**\n")
+            if best_model.get('eval_loss') is not None: f.write(f"- **验证集损失 (Eval Loss)**: {best_model['eval_loss']:.4f}\n")
+            f.write(f"- **训练集损失 (Train Loss)**: {best_model['train_loss']:.4f}\n")
+            f.write(f"- **单次训练耗时**: {best_model['training_time_seconds']/60:.1f} 分钟\n\n")
+
+            f.write("### 最佳超参数组合\n\n")
+            f.write("```json\n")
+            f.write(json.dumps(best_model['hyperparameters'], indent=2, ensure_ascii=False))
+            f.write("\n```\n\n")
+
+            stats = report['statistics']
+            f.write("## 3. 统计数据摘要\n\n")
+            f.write("| 指标 | 最小值 | 最大值 | 平均值 | 标准差 |\n")
+            f.write("|:---|:---:|:---:|:---:|:---:|\n")
+            if stats['eval_loss']['mean'] is not None:
+                f.write(f"| **验证集损失** | {stats['eval_loss']['min']:.4f} | {stats['eval_loss']['max']:.4f} | {stats['eval_loss']['mean']:.4f} | {stats['eval_loss']['std']:.4f} |\n")
+            if stats['train_loss']['mean'] is not None:
+                f.write(f"| **训练集损失** | {stats['train_loss']['min']:.4f} | {stats['train_loss']['max']:.4f} | {stats['train_loss']['mean']:.4f} | {stats['train_loss']['std']:.4f} |\n")
+            if stats['training_time_minutes']['mean'] is not None:
+                f.write(f"| **训练耗时(分钟)** | {stats['training_time_minutes']['min']} | {stats['training_time_minutes']['max']} | {stats['training_time_minutes']['mean']} | - |\n")
+            f.write("\n")
+
+            f.write("## 4. 所有试验详情 (按性能排序)\n\n")
+            header = "| 排名 | Trial # | 得分 (Loss) | 验证集 Loss | 训练集 Loss | 批次大小 | 学习率 | LoRA Rank (r) | 序列长度 |\n"
+            separator = "|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n"
+            f.write(header)
+            f.write(separator)
+            for rank, trial_data in enumerate(report['all_trials_sorted'], 1):
+                hp = trial_data['hyperparameters']
+                eval_loss_str = f"{trial_data['eval_loss']:.4f}" if trial_data.get('eval_loss') is not None else "N/A"
+                row = (
+                    f"| {rank} "
+                    f"| {trial_data['trial_number']} "
+                    f"| **{trial_data['score']:.4f}** "
+                    f"| {eval_loss_str} "
+                    f"| {trial_data['train_loss']:.4f} "
+                    f"| {hp['per_device_train_batch_size']} "
+                    f"| {hp['learning_rate']:.1e} "
+                    f"| {hp['r']} "
+                    f"| {hp['max_seq_length']} |\n"
+                )
+                f.write(row)
+
+    def merge_and_save_for_inference(self, best_adapter_path: str, final_save_dir: str) -> None:
+        """
+        Merge the best LoRA adapter and save the model for inference.
+
+        Args:
+            best_adapter_path (str): The path to the best LoRA adapter.
+            final_save_dir (str): The directory where the merged model will be saved.
+        """
+        logger.info("\n" + "="*60)
+        logger.info("开始合并模型以用于推理...")
+
+        if os.path.exists(final_save_dir):
+            shutil.rmtree(final_save_dir)
+        os.makedirs(final_save_dir)
+
+        try:
+            # Load the pre-trained model and tokenizer
+            model, tokenizer = FastLanguageModel.from_pretrained(
+                model_name=self.base_model,
+                dtype=self.compute_dtype,
+                load_in_4bit=False,
+            )
+
+            # Load the best LoRA adapter and merge it with the pre-trained model
+            logger.info(f"从 {best_adapter_path} 加载最佳LoRA适配器并合并...")
+            model.load_adapter(best_adapter_path)
+            model.merge_and_unload()
+
+            # Save the merged model to the specified directory
+            logger.info(f"正在将合并后的模型保存到: {final_save_dir}")
+            model.save_pretrained(final_save_dir)
+            tokenizer.save_pretrained(final_save_dir)
+            logger.info("✓ 推理模型保存成功！")
+
+        except Exception as e:
+            logger.error(f"模型合并与保存过程中发生错误: {str(e)}")
+        finally:
+            # Clean up memory
+            if 'model' in locals():
+                del model
+            if 'tokenizer' in locals():
+                del tokenizer
+            gc.collect()
+            torch.cuda.empty_cache()
 
     def model_finetuning(self):
-        
-        # 设置输出目录
-        output_dir = os.path.join(self.base_model, self.model_cnf.get_value('models.reasoning.trained_models'))
-        final_model_save_dir = os.path.join(self.base_model, self.model_cnf.get_value('models.reasoning.best_model'))
-        
-        # 清理旧目录
-        if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
-        os.makedirs(output_dir, exist_ok=True)
-        
-        # 加载数据
-        logger.info("="*50)
-        logger.info("开始加载训练数据...")
-        dataset_dict = self.load_training_data_from_json()
-        if not dataset_dict:
-            logger.error("数据加载失败！")
+        """
+        Perform model fine-tuning.
+
+        This function loads the training data from a JSON file, creates an Optuna study, optimizes the hyperparameters,
+        saves the best model to a directory, generates a comprehensive report, and merges the best LoRA adapter with the pre-trained model for inference.
+        """
+        # Load the training data from a JSON file
+        self.dataset_dict = self.load_training_data_from_json()
+        if not self.dataset_dict:
             return
-        
-        # 获取超参数组合
-        hyperparameter_combinations = self.get_hyperparameter_combinations()
-        logger.info(f"将尝试 {len(hyperparameter_combinations)} 种参数组合")
-        
-        # 初始化结果跟踪
-        all_results = []
-        best_model_info = None
-        best_score = float('inf')
-        patience_counter = 0
-        
-        # 确定数据类型
-        dtype = torch.float16
-        
-        # 开始训练循环
-        for round_idx, hyperparameters in enumerate(hyperparameter_combinations, 1):
-            logger.info(f"\n{'='*50}")
-            logger.info(f"轮次 {round_idx}/{len(hyperparameter_combinations)}")
-            logger.info(f"超参数: {json.dumps(hyperparameters, indent=2)}")
-            
-            try:
-                # 加载模型
-                logger.info("加载模型...")
-                model, tokenizer = FastLanguageModel.from_pretrained(
-                    model_name=self.base_model,
-                    max_seq_length=hyperparameters.get('max_seq_length', 2048),
-                    dtype=dtype,
-                    load_in_4bit=True,  # 使用4bit量化节省显存
-                )
 
-                # 修复 tokenizer 的特殊 token
-                # Qwen2.5 模型的特殊 token 设置
-                if tokenizer.pad_token is None:
-                    tokenizer.pad_token = tokenizer.eos_token
-                if tokenizer.pad_token_id is None:
-                    tokenizer.pad_token_id = tokenizer.eos_token_id
+        # Create an Optuna study
+        self.output_dir = os.path.join(self.base_model, self.model_cnf.get_value('models.reasoning.trained_models'))
+        final_adapter_save_dir = os.path.join(self.base_model, self.model_cnf.get_value('models.reasoning.best_model'))
+        final_merged_model_save_dir = f"{final_adapter_save_dir}Merged"
 
-                # 确保 model config 与 tokenizer 一致
-                model.config.pad_token_id = tokenizer.pad_token_id
-                model.config.bos_token_id = tokenizer.bos_token_id
-                model.config.eos_token_id = tokenizer.eos_token_id
-                
-                # 应用LoRA
-                model = FastLanguageModel.get_peft_model(
-                    model,
-                    r=hyperparameters.get('r', 32),
-                    target_modules=self.target_modules,
-                    lora_alpha=hyperparameters.get('lora_alpha', 64),
-                    lora_dropout=0.1,  # 添加dropout防止过拟合
-                    bias="none",
-                    use_gradient_checkpointing=True,
-                    random_state=42,
-                    use_rslora=True,  # 使用改进的LoRA
-                    loftq_config=None,
-                )
-                
-                # 打印模型信息
-                trainable_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
-                total_params = sum(p.numel() for p in model.parameters())
-                logger.info(f"可训练参数: {trainable_params:,} / {total_params:,} ({100*trainable_params/total_params:.2f}%)")
-                
-                # 训练
-                current_model_path = os.path.join(output_dir, f"model_round_{round_idx}")
-                results = self.run_training_with_validation(
-                    model, tokenizer, dataset_dict, current_model_path, hyperparameters
-                )
-                
-                # 记录结果
-                result_info = {
-                    'round': round_idx,
-                    'path': current_model_path,
-                    'hyperparameters': hyperparameters,
-                    **results
-                }
-                all_results.append(result_info)
-                
-                # 计算综合得分（考虑训练和验证损失）
-                if results['eval_loss'] is not None:
-                    score = results['eval_loss']  # 优先使用验证损失
-                else:
-                    score = results['train_loss']
-                
-                logger.info(f"训练损失: {results['train_loss']:.4f}")
-                if results['eval_loss']:
-                    logger.info(f"验证损失: {results['eval_loss']:.4f}")
-                logger.info(f"训练时间: {results['training_time']/60:.1f} 分钟")
-                
-                # 更新最佳模型
-                if score < best_score:
-                    # 删除之前的最佳模型节省空间
-                    if best_model_info and os.path.exists(best_model_info['path']):
-                        shutil.rmtree(best_model_info['path'])
-                    
-                    best_score = score
-                    best_model_info = result_info
-                    patience_counter = 0
-                    logger.info("✓ 新的最佳模型！")
-                else:
-                    # 删除非最佳模型
-                    if os.path.exists(current_model_path):
-                        shutil.rmtree(current_model_path)
-                    patience_counter += 1
-                
-                # 早停检查
-                if patience_counter >= self.early_stopping_patience:
-                    logger.info(f"连续 {self.early_stopping_patience} 轮无改善，提前停止")
-                    break
-                
-                # 清理内存
-                del model, tokenizer
-                gc.collect()
-                torch.cuda.empty_cache()
-                
-            except Exception as e:
-                print(e)
-                logger.error(f"第 {round_idx} 轮训练失败: {str(e)}")
-                if "out of memory" in str(e).lower():
-                    logger.info("尝试减小batch size或序列长度")
-                    # 可以在这里实现自动降级策略
-                continue
-        
-        # 保存最佳模型和报告
-        if best_model_info:
-            logger.info("\n" + "="*50)
-            logger.info("训练完成！最佳模型信息：")
-            logger.info(f"训练损失: {best_model_info['train_loss']:.4f}")
-            if best_model_info['eval_loss']:
-                logger.info(f"验证损失: {best_model_info['eval_loss']:.4f}")
-            logger.info(f"训练时间: {best_model_info['training_time']/60:.1f} 分钟")
-            logger.info(f"超参数: {json.dumps(best_model_info['hyperparameters'], indent=2)}")
-            
-            # 复制最佳模型到最终目录
-            if os.path.exists(final_model_save_dir):
-                shutil.rmtree(final_model_save_dir)
-            shutil.copytree(best_model_info['path'], final_model_save_dir)
-            
-            # 保存详细报告
-            self.save_comprehensive_report(all_results, best_model_info, final_model_save_dir)
-            
-            logger.info(f"\n✓ 最佳模型已保存至: {final_model_save_dir}")
+        if os.path.exists(self.output_dir):
+            shutil.rmtree(self.output_dir)
+        os.makedirs(self.output_dir, exist_ok=True)
+
+        study = optuna.create_study(direction="minimize")
+        study.optimize(self.objective, n_trials=self.max_trials)
+        if study.best_trial and study.best_trial.state == optuna.trial.TrialState.COMPLETE:
+            best_trial = study.best_trial
+            best_model_path = best_trial.user_attrs.get("model_path")
+
+            logger.info("\n" + "="*60 + "\n智能搜索完成！")
+            logger.info(f"最佳 Trial: #{best_trial.number}，得分 (Loss): {best_trial.value:.4f}")
+            logger.info(f"最佳超参数: {json.dumps(best_trial.params, indent=2)}")
+
+            # Remove the model directories of the non-best trials
+            for trial in study.trials:
+                if trial.number != best_trial.number and "model_path" in trial.user_attrs:
+                    path_to_remove = trial.user_attrs["model_path"]
+                    if os.path.exists(path_to_remove):
+                        shutil.rmtree(path_to_remove)
+
+            # Save the best LoRA adapter to a directory
+            if os.path.exists(final_adapter_save_dir):
+                shutil.rmtree(final_adapter_save_dir)
+            shutil.copytree(best_model_path, final_adapter_save_dir)
+
+            # Generate a comprehensive report
+            self.save_comprehensive_report(study, final_adapter_save_dir)
+            logger.info(f"\n✓ 最佳LoRA适配器已保存至: {final_adapter_save_dir}")
+
+            # Merge the best LoRA adapter with the pre-trained model for inference
+            self.merge_and_save_for_inference(final_adapter_save_dir, final_merged_model_save_dir)
         else:
-            logger.error("训练失败，未找到有效模型")
+            logger.error("训练过程未产生任何有效的最佳模型。")
+
 
 if __name__ == "__main__":
     trainer = ModelTurning()
