@@ -17,7 +17,7 @@ import numpy as np
 
 from typing import Dict, Optional
 from datasets import Dataset, DatasetDict
-from unsloth import FastLanguageModel
+from unsloth import FastLanguageModel,unsloth_train
 from unsloth.chat_templates import train_on_responses_only
 from trl import SFTTrainer
 from transformers import TrainingArguments
@@ -209,7 +209,7 @@ class ModelTurning:
         # Train the model
         start_time = time.time()
         trainer = train_on_responses_only(trainer,instruction_part="<|im_start|>user\n",response_part="<|im_start|>assistant\n")
-        train_result = trainer.train()
+        train_result = unsloth_train(trainer)
         training_time = time.time() - start_time
 
         # Evaluate the model if a validation dataset is provided
