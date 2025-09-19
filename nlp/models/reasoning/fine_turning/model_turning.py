@@ -62,8 +62,8 @@ class ModelTurning:
         :return: None
         """
         self.finetuning_config = self.model_cnf.get_value('models.reasoning.finetuning')
-        self.max_trials = self.finetuning_config.get('max_trials', 24)
-        self.default_params = self.finetuning_config.get('default', {})
+        self.max_trials = self.finetuning_config.get('max_trials')
+        self.default_params = self.finetuning_config.get('default')
         self.search_space_config = self.finetuning_config.get('performance').get("search_space")
         self.target_modules = self.finetuning_config.get('performance').get("target_modules")
         self.optimization_config = self.finetuning_config.get('optimization')
@@ -437,7 +437,6 @@ class ModelTurning:
             summary = report['training_summary']
             f.write("## 1. 训练概览\n\n")
             f.write(f"- **生成时间**: {summary['date']}\n")
-            f.write(f"- **硬件平台**: {summary['hardware']}\n")
             f.write(f"- **基础模型**: `{summary['base_model']}`\n")
             f.write(f"- **请求试验次数**: {summary['total_trials_requested']}\n")
             f.write(f"- **成功完成次数**: {summary['total_trials_completed']}\n")
