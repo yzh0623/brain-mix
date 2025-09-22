@@ -17,7 +17,7 @@ from trl import SFTTrainer
 from transformers import TrainingArguments
 from peft import PeftModel
 
-project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
+project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.append(os.path.join(project_dir, 'utils'))
 
 import const_util as CU

@@ -8,7 +8,7 @@ log_path=/home/paohe/Documents/tmp/logs/brain-mix
 
 # qwen3 model turning
 nohup $py_path/bin/python \
-$workspace_path/nlp/models/reasoning/fine_turning/model_turning.py \
-> $log_path/model_turning_$today.log 2>&1 &
+$workspace_path/nlp/models/reasoning/model_auto_turning.py \
+> $log_path/model_auto_turning_$today.log 2>&1 &
 
 
