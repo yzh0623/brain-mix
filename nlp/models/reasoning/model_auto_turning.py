@@ -1,10 +1,4 @@
-"""
-Copyright (c) 2025 by yuanzhenhui All right reserved.
-FilePath: /brain-mix/nlp/models/reasoning/fine_turning/model_turning.py
-Author: yuanzhenhui
-Date: 2025-09-05 17:42:48
-LastEditTime: 2025-09-18 08:00:00
-"""
+
 import os
 import sys
 import torch
@@ -21,6 +15,7 @@ from unsloth import FastLanguageModel,unsloth_train
 from unsloth.chat_templates import train_on_responses_only
 from trl import SFTTrainer
 from transformers import TrainingArguments
+from peft import PeftModel
 
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))))
 sys.path.append(os.path.join(project_dir, 'utils'))
@@ -31,7 +26,7 @@ from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
 
-class ModelTurning:
+class ModelAutoTurning:
 
     def __init__(self, **kwargs) -> None:
         self.model_cnf_yml = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'nlp_cnf.yml')
@@ -482,7 +477,7 @@ class ModelTurning:
                     f"| {eval_loss_str} "
                     f"| {trial_data['train_loss']:.4f} "
                     f"| {hp['per_device_train_batch_size']} "
-                    f"| {hp['learning_rate']:.1e} "
+                    f"| {hp['learning_rate']} "
                     f"| {hp['r']} "
                     f"| {hp['max_seq_length']} |\n"
                 )
@@ -505,31 +500,35 @@ class ModelTurning:
 
         try:
             # Load the pre-trained model and tokenizer
-            model, tokenizer = FastLanguageModel.from_pretrained(
+            trained_model, trained_tokenizer = FastLanguageModel.from_pretrained(
                 model_name=self.base_model,
                 dtype=self.compute_dtype,
                 load_in_4bit=False,
             )
 
             # Load the best LoRA adapter and merge it with the pre-trained model
-            logger.info(f"从 {best_adapter_path} 加载最佳LoRA适配器并合并...")
-            model.load_adapter(best_adapter_path)
-            model.merge_and_unload()
+            logger.info(f"从 {best_adapter_path} 加载最佳LoRA适配器...")
+            model = PeftModel.from_pretrained(trained_model, best_adapter_path)
+            
+            logger.info("正在合并LoRA权重到基础模型中...")
+            model = model.merge_and_unload()
 
             # Save the merged model to the specified directory
             logger.info(f"正在将合并后的模型保存到: {final_save_dir}")
             model.save_pretrained(final_save_dir)
-            tokenizer.save_pretrained(final_save_dir)
+            trained_tokenizer.save_pretrained(final_save_dir)
             logger.info("✓ 推理模型保存成功！")
 
         except Exception as e:
-            logger.error(f"模型合并与保存过程中发生错误: {str(e)}")
+            logger.error(f"模型合并与保存过程中发生错误: {str(e)}", exc_info=True)
         finally:
             # Clean up memory
             if 'model' in locals():
                 del model
-            if 'tokenizer' in locals():
-                del tokenizer
+            if 'trained_model' in locals():
+                del trained_model
+            if 'trained_tokenizer' in locals():
+                del trained_tokenizer
             gc.collect()
             torch.cuda.empty_cache()
 
@@ -587,5 +586,6 @@ class ModelTurning:
 
 
 if __name__ == "__main__":
-    trainer = ModelTurning()
+    trainer = ModelAutoTurning()
     trainer.model_finetuning()
+    
