@@ -1,13 +1,52 @@
 models:
   reasoning:
-    origin_path: <model_path>/Qwen2.5-1.5B
-    quant_path: nlp/model/reasoning/load/after_quant
+    origin_path: <model_path>/Qwen/0.6B
+    trained_models: FinetunedModels
+    best_model: FinalBestModel
+    finetuning:
+      dataset_size: 50000 # 大幅增加训练数据量
+      validation_split: 0.1 # 10%用于验证
+      max_trials: 24 # 增加尝试次数
+      default:
+        warmup_steps: 100
+      performance:
+        search_space:
+          learning_rate:
+            choices: [ 5e-5, 1e-4, 2e-4, 3e-4 ]
+          max_steps:
+            choices: [ 800, 1200, 1500 ]
+          r:
+            choices: [ 16, 32, 64 ]
+          lora_alpha:
+            choices: [ 32, 64, 128 ]
+          per_device_train_batch_size:
+            choices: [ 8, 16, 32 ] # OOM时脚本会自动降级
+          gradient_accumulation_steps:
+            choices: [ 2, 4, 8 ]
+          max_seq_length:
+            choices: [ 4096, 8192 ]
+        target_modules:
+        - "q_proj"
+        - "k_proj"
+        - "v_proj"
+        - "o_proj"
+        - "gate_proj"
+        - "up_proj"
+        - "down_proj"
+      optimization:
+        optimizer: "adamw_8bit"
+        lr_scheduler_type: "cosine"
+      dataloader:
+        num_workers: 4
+
   embedding:
-    path: <embedding_path>/bge-large-zh-v1.5
+    path: <embedding_path>/BAAI/bge-large-zh-v1.5
     normalize_embeddings: True
 
 datasets:
   base_path: <dataset_path>/Datasets
+  train_base_path: <train_path>/Datasets
+  turning_path: turning-data
   dir_name:
   - hwtcm-deepseek
   - hwtcm-sft-v1
