@@ -1,9 +1,9 @@
 """
-Copyright (c) 2025 by Zhenhui Yuan All right reserved.
-FilePath: /brain-mix/nlp/datasets/4.score_and_filter_data.py
-Author: Zhenhui Yuan
-Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-10 16:10:52
+Copyright (c) 2025 by paohe information technology Co., Ltd. All right reserved.
+FilePath: /brain-mix/nlp/datasets/step4_score_and_filter_data.py
+Author: yuanzhenhui
+Date: 2025-09-22 10:06:01
+LastEditTime: 2025-09-22 14:09:32
 """
 
 import re

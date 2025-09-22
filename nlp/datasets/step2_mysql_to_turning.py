@@ -1,9 +1,9 @@
 """
-Copyright (c) 2025 by Zhenhui Yuan All right reserved.
-FilePath: /brain-mix/nlp/datasets/2.mysql_to_turning.py
-Author: Zhenhui Yuan
-Date: 2025-09-05 10:24:16
-LastEditTime: 2025-09-10 16:09:44
+Copyright (c) 2025 by paohe information technology Co., Ltd. All right reserved.
+FilePath: /brain-mix/nlp/datasets/step2_mysql_to_turning.py
+Author: yuanzhenhui
+Date: 2025-09-22 10:06:01
+LastEditTime: 2025-09-22 14:09:00
 """
 
 import random

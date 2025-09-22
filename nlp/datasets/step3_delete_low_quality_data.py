@@ -1,9 +1,9 @@
 """
-Copyright (c) 2025 by Zhenhui Yuan All right reserved.
-FilePath: /brain-mix/nlp/datasets/3.delete_low_quality_data.py
-Author: Zhenhui Yuan
-Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-15 09:02:52
+Copyright (c) 2025 by paohe information technology Co., Ltd. All right reserved.
+FilePath: /brain-mix/nlp/datasets/step3_delete_low_quality_data.py
+Author: yuanzhenhui
+Date: 2025-09-22 10:06:01
+LastEditTime: 2025-09-22 14:09:15
 """
 
 import time

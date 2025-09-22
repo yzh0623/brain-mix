@@ -1,3 +1,10 @@
+"""
+Copyright (c) 2025 by paohe information technology Co., Ltd. All right reserved.
+FilePath: /brain-mix/nlp/models/reasoning/model_auto_turning.py
+Author: yuanzhenhui
+Date: 2025-09-22 10:06:01
+LastEditTime: 2025-09-22 14:17:04
+"""
 
 import os
 import sys
@@ -29,6 +36,14 @@ logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 class ModelAutoTurning:
 
     def __init__(self, **kwargs) -> None:
+        """
+        Initialize the ModelAutoTurning class.
+
+        This class is used to perform automatic turning of the model.
+
+        :param kwargs: The keyword arguments to be passed to the class.
+        :type kwargs: Dict[str, Any]
+        """
         self.model_cnf_yml = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'nlp_cnf.yml')
         self.model_cnf = YamlUtil(self.model_cnf_yml)
         self.base_model = self.model_cnf.get_value('models.reasoning.origin_model')
@@ -37,7 +52,13 @@ class ModelAutoTurning:
         self.load_configurations()
         self.setup_gpu_optimization()
 
+        """
+        The dataset dictionary to be used for fine-tuning.
+        """
         self.dataset_dict = None
+        """
+        The output directory to be used for saving the fine-tuned model.
+        """
         self.output_dir = None
 
     def load_configurations(self):
@@ -334,32 +355,30 @@ class ModelAutoTurning:
         """
         logger.info("正在生成最终的训练报告...")
 
+        # Get all the trial results
         all_results = []
         for trial in study.trials:
             if trial.state == optuna.trial.TrialState.COMPLETE and "full_results" in trial.user_attrs:
+                # Get the full results of the trial
                 results = trial.user_attrs["full_results"]
+                # Get the trial number, evaluation loss, training loss, evaluation loss (if available), and hyperparameters
                 result_info = {
-                    # Trial number
                     'trial_number': trial.number,
-                    # Evaluation loss of the trial
                     'score': trial.value,
-                    # Training loss of the trial
                     'train_loss': results.get('train_loss'),
-                    # Evaluation loss of the trial (if available)
                     'eval_loss': results.get('eval_loss'),
-                    # Training time of the trial in seconds
                     'training_time_seconds': results.get('training_time'),
-                    # Hyperparameters of the trial
                     'hyperparameters': results.get('hyperparameters'),
-                    # Path to the model of the trial
                     'model_path': trial.user_attrs.get("model_path"),
                 }
                 all_results.append(result_info)
 
+        # Check if there are any successful trials
         if not all_results:
             logger.warning("未找到任何成功的训练试验，无法生成报告。")
             return
 
+        # Get the best trial
         best_trial = study.best_trial
         if not best_trial or "full_results" not in best_trial.user_attrs:
             logger.error("未能找到最佳试验或其结果不完整，报告可能不准确。")
@@ -367,24 +386,20 @@ class ModelAutoTurning:
         else:
             best_results = best_trial.user_attrs["full_results"]
             best_model_info_dict = {
-                # Trial number of the best trial
                 'trial_number': best_trial.number,
-                # Evaluation loss of the best trial
                 'score': best_trial.value,
-                # Training loss of the best trial
                 'train_loss': best_results.get('train_loss'),
-                # Evaluation loss of the best trial (if available)
                 'eval_loss': best_results.get('eval_loss'),
-                # Training time of the best trial in seconds
                 'training_time_seconds': best_results.get('training_time'),
-                # Hyperparameters of the best trial
                 'hyperparameters': best_results.get('hyperparameters'),
             }
 
+        # Get the statistics of the trials
         train_losses = [r['train_loss'] for r in all_results if r.get('train_loss')]
         eval_losses = [r['eval_loss'] for r in all_results if r.get('eval_loss')]
         training_times = [r['training_time_seconds'] for r in all_results if r.get('training_time_seconds')]
 
+        # Generate the report
         report = {
             "training_summary": {
                 "date": time.strftime("%Y-%m-%d %H:%M:%S"),
@@ -416,10 +431,12 @@ class ModelAutoTurning:
             "all_trials_sorted": sorted(all_results, key=lambda x: x['score'])
         }
 
+        # Save the report to a JSON file
         report_path = os.path.join(save_dir, "training_report.json")
         with open(report_path, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, ensure_ascii=False)
 
+        # Save the report to a Markdown file
         self.save_markdown_report(report, save_dir)
         logger.info(f"✓ 详细的训练报告已保存至: {save_dir}")
 
@@ -584,8 +601,6 @@ class ModelAutoTurning:
         else:
             logger.error("训练过程未产生任何有效的最佳模型。")
 
-
 if __name__ == "__main__":
     trainer = ModelAutoTurning()
     trainer.model_finetuning()
-    

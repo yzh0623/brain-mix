@@ -1,9 +1,9 @@
 """
-Copyright (c) 2025 by Zhenhui Yuan All right reserved.
-FilePath: /brain-mix/nlp/datasets/1.load_and_save_to_es.py
-Author: Zhenhui Yuan
-Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-10 16:08:27
+Copyright (c) 2025 by paohe information technology Co., Ltd. All right reserved.
+FilePath: /brain-mix/nlp/datasets/step1_load_and_save_to_es.py
+Author: yuanzhenhui
+Date: 2025-09-22 10:06:01
+LastEditTime: 2025-09-22 14:08:39
 """
 
 from tqdm import tqdm
