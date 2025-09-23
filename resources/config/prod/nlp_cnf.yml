@@ -4,27 +4,27 @@ models:
     trained_models: FinetunedModels
     best_model: FinalBestModel
     finetuning:
-      dataset_size: 50000 # 大幅增加训练数据量
-      validation_split: 0.1 # 10%用于验证
-      max_trials: 24 # 增加尝试次数
+      dataset_size: 50000
+      validation_split: 0.1
+      max_trials: 24
       default:
         warmup_steps: 100
       performance:
         search_space:
           learning_rate:
-            choices: [ 5e-5, 1e-4, 2e-4, 3e-4 ]
+            choices: [5e-5, 1e-4, 2e-4, 3e-4]
           max_steps:
-            choices: [ 800, 1200, 1500 ]
+            choices: [800, 1200, 1500]
           r:
-            choices: [ 16, 32, 64 ]
+            choices: [16, 32, 64]
           lora_alpha:
-            choices: [ 32, 64, 128 ]
+            choices: [32, 64, 128]
           per_device_train_batch_size:
-            choices: [ 8, 16, 32 ] # OOM时脚本会自动降级
+            choices: [8, 16, 32]
           gradient_accumulation_steps:
-            choices: [ 2, 4, 8 ]
+            choices: [2, 4, 8]
           max_seq_length:
-            choices: [ 4096, 8192 ]
+            choices: [4096, 8192]
         target_modules:
         - "q_proj"
         - "k_proj"
