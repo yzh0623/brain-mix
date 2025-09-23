@@ -1,9 +1,8 @@
 """
-Copyright (c) 2025 by paohe information technology Co., Ltd. All right reserved.
 FilePath: /brain-mix/nlp/datasets/step4_score_and_filter_data.py
 Author: yuanzhenhui
 Date: 2025-09-22 10:06:01
-LastEditTime: 2025-09-22 14:09:32
+LastEditTime: 2025-09-23 14:25:10
 """
 
 import re

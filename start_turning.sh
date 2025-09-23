@@ -2,9 +2,9 @@
 
 today=$(date +%Y-%m-%d)
 
-py_path=/home/paohe/anaconda3/envs/brain_mix
-workspace_path=/home/paohe/llm/nlp/brain-mix
-log_path=/home/paohe/Documents/tmp/logs/brain-mix
+py_path=/home/yzh/anaconda3/envs/brain_mix
+workspace_path=/home/yzh/llm/nlp/brain-mix
+log_path=/home/yzh/Documents/tmp/logs/brain-mix
 
 # model turning script 
 nohup $py_path/bin/python \

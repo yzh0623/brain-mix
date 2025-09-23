@@ -2,9 +2,9 @@
 
 today=$(date +%Y-%m-%d)
 
-py_path=/home/paohe/miniconda3/envs/brain_mix
-workspace_path=/home/paohe/Documents/Workspaces/brain-mix
-log_path=/home/paohe/Documents/Temps/brain-mix
+py_path=/home/yzh/miniconda3/envs/brain_mix
+workspace_path=/home/yzh/Documents/Workspaces/brain-mix
+log_path=/home/yzh/Documents/Temps/brain-mix
 
 # delete low quality data in elasticsearch
 nohup $py_path/bin/python \
