@@ -1,10 +1,11 @@
 """
-Copyright (c) 2025 by Zhenhui Yuan All right reserved.
-FilePath: /brain-mix/utils/check/check_by_file_modify.py
-Author: Zhenhui Yuan
-Date: 2025-09-08 15:11:32
-LastEditTime: 2025-09-10 16:11:47
+Copyright (c) 2025 by Zhenhui Yuan. All right reserved.
+FilePath: /brain-mix/nlp/schedule/check_by_file_modify.py
+Author: yuanzhenhui
+Date: 2025-09-09 13:50:47
+LastEditTime: 2025-10-10 21:22:50
 """
+
 
 import time
 import subprocess

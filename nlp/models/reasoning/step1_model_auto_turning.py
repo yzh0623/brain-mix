@@ -1,8 +1,9 @@
 """
-FilePath: /brain-mix/nlp/models/reasoning/model_auto_turning.py
+Copyright (c) 2025 by Zhenhui Yuan. All right reserved.
+FilePath: /brain-mix/nlp/models/reasoning/step1_model_auto_turning.py
 Author: yuanzhenhui
 Date: 2025-09-22 10:06:01
-LastEditTime: 2025-09-23 14:25:17
+LastEditTime: 2025-10-10 19:34:51
 """
 
 import os

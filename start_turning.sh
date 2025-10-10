@@ -8,7 +8,5 @@ log_path=/home/paohe/Documents/tmp/logs/brain-mix
 
 # model turning script 
 nohup $py_path/bin/python \
-$workspace_path/nlp/models/reasoning/model_auto_turning.py \
+$workspace_path/nlp/models/reasoning/step1_model_auto_turning.py \
 > $log_path/model_auto_turning_$today.log 2>&1 &
-
-

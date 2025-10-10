@@ -2,7 +2,7 @@
 FilePath: /brain-mix/nlp/datasets/step1_load_and_save_to_es.py
 Author: yuanzhenhui
 Date: 2025-09-22 10:06:01
-LastEditTime: 2025-09-23 14:25:00
+LastEditTime: 2025-10-10 21:17:45
 """
 
 from tqdm import tqdm
@@ -22,7 +22,7 @@ import const_util as CU
 from persistence.elastic_util import ElasticUtil
 from persistence.mysql_util import MysqlUtil
 from thirdparty.silicon_util import SiliconUtil
-from models.embedding.data_embedding import DataEmbedding
+from thirdparty.embedding_util import EmbeddingUtil
 
 from yaml_util import YamlUtil
 from logging_util import LoggingUtil
@@ -62,7 +62,7 @@ class LoadAndSaveToEs:
         """
         The DataEmbedding class is used to get the embedding of a given text.
         """
-        self.embedding = DataEmbedding()
+        self.embedding = EmbeddingUtil()
         
         """
         The tiktoken encoding used to get the length of a given text.
