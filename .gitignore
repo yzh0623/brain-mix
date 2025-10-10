@@ -8,3 +8,20 @@
 # Local History for Visual Studio Code
 .history/
 .DS_Store
+.vscode/settings.json
+nlp/models/embedding/__pycache__/data_embedding.cpython-310.pyc
+utils/__pycache__/api_util.cpython-310.pyc
+utils/__pycache__/clean_util.cpython-310.pyc
+utils/__pycache__/common_util.cpython-310.pyc
+utils/__pycache__/logging_util.cpython-310.pyc
+utils/__pycache__/yaml_util.cpython-310.pyc
+utils/persistence/__pycache__/elastic_util.cpython-310.pyc
+resources/config/myself/nlp_cnf.yml
+resources/config/myself/utils_cnf.yml
+.gitignore
+utils/__pycache__/const_util.cpython-310.pyc
+resources/config/local/nlp_cnf.yml
+resources/config/local/utils_cnf.yml
+utils/persistence/__pycache__/clean_util.cpython-310.pyc
+utils/persistence/__pycache__/mysql_util.cpython-310.pyc
+utils/thirdparty/__pycache__/silicon_util.cpython-310.pyc
