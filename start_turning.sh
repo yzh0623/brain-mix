@@ -1,6 +1,6 @@
 #!/bin/sh
 
-today=$(date +%Y-%m-%d)
+today=$(date +%Y_%m_%d)
 
 py_path=/home/paohe/anaconda3/envs/brain_mix
 workspace_path=/home/paohe/llm/nlp/brain-mix
