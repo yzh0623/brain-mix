@@ -2,7 +2,7 @@
 FilePath: /brain-mix/nlp/datasets/step4_score_and_filter_data.py
 Author: yuanzhenhui
 Date: 2025-09-22 10:06:01
-LastEditTime: 2025-10-11 10:54:04
+LastEditTime: 2025-10-11 11:01:36
 """
 
 import os
@@ -63,7 +63,7 @@ class ScoreAndFilterData:
         results = self.elastic.find_by_body(name=CU.TMP_ES_INDEX, body=search_not_ready)
         batch_count = 1
         while len(results) > 0:
-            with multiprocessing.Pool(processes=min(2, len(results))) as pool:
+            with multiprocessing.Pool(processes=BATCH_SIZE) as pool:
                 
                 # Use multiprocessing to process multiple records in parallel
                 process_results = pool.starmap(
