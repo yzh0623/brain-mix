@@ -2,7 +2,7 @@
 FilePath: /brain-mix/nlp/datasets/step4_score_and_filter_data.py
 Author: yuanzhenhui
 Date: 2025-09-22 10:06:01
-LastEditTime: 2025-10-11 11:01:36
+LastEditTime: 2025-10-11 11:20:13
 """
 
 import os
@@ -35,6 +35,7 @@ class ScoreAndFilterData:
 
         # Get the Silicon API configuration from the YAML file
         silicon_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'utils_cnf.yml')
+        
         # Get the content scores from the Silicon API configuration
         self.content_scores = YamlUtil(silicon_cnf).get_value('silicon.agent.content_score')
         # self.content_scores is a dictionary mapping the content score type to the weight of the score
@@ -61,9 +62,8 @@ class ScoreAndFilterData:
             }
         }
         results = self.elastic.find_by_body(name=CU.TMP_ES_INDEX, body=search_not_ready)
-        batch_count = 1
         while len(results) > 0:
-            with multiprocessing.Pool(processes=BATCH_SIZE) as pool:
+            with multiprocessing.Pool(processes=len(results)) as pool:
                 
                 # Use multiprocessing to process multiple records in parallel
                 process_results = pool.starmap(
@@ -74,8 +74,7 @@ class ScoreAndFilterData:
                 
                 # Update the records in the TMP_ES_INDEX with the processed content scores
                 self.elastic.update(name=CU.TMP_ES_INDEX,data=update_data, id=es_id)
-            batch_count += 1
-            
+                
             # Search for the next batch of records
             results = self.elastic.find_by_body(name=CU.TMP_ES_INDEX, body=search_not_ready)
 
@@ -101,7 +100,7 @@ def process_one_record(result, content_scores):
     from thirdparty.silicon_util import SiliconUtil
     
     from logging_util import LoggingUtil
-    logger = LoggingUtil(os.path.basename(__file__).replace(".py", "")+"SubProcess")
+    logger = LoggingUtil(os.path.basename(__file__).replace(".py", "")+"_sub_process")
 
     silicon = SiliconUtil()
 
@@ -138,7 +137,7 @@ def process_one_record(result, content_scores):
                 if score.isdigit():
                     
                     # If the digit is a digit, log the time it takes to get the digit
-                    logger.info(f"Batch key_id:{id}, LLM({key}) score:{score}, use time:{math.ceil(time.time() - st)}s.")
+                    logger.info(f"Batch key_id:{id},LLM({key}) score:{score},Use time:{math.ceil(time.time() - st)}s.")
                     
                     # Append the digit to the result list
                     resp_array.append({key: int(score)})
@@ -222,7 +221,6 @@ def process_one_record(result, content_scores):
     else:
         update_data = {"doc": {"process_status": 2}}
     return (id, update_data)
-
 
 if __name__ == "__main__":
     s = ScoreAndFilterData()

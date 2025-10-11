@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan All right reserved.
 FilePath: /brain-mix/utils/logging_util.py
 Author: Zhenhui Yuan
 Date: 2025-09-05 09:56:19
-LastEditTime: 2025-09-10 16:00:24
+LastEditTime: 2025-10-11 11:12:56
 """
 
 import logging
@@ -45,7 +45,8 @@ class LoggingUtil(Logger):
             os.makedirs(logging_path)
             
         # Set the output format
-        formatter = logging.Formatter("[%(asctime)s][%(levelname)s]-%(filename)s:%(funcName)s - %(lineno)d - %(message)s")
+        #formatter = logging.Formatter("[%(asctime)s][%(levelname)s]-%(filename)s:%(funcName)s - %(lineno)d - %(message)s")
+        formatter = logging.Formatter("[%(asctime)s]%(funcName)s - %(message)s")
 
         # Create a file handler
         file_handler = TimedRotatingFileHandler(
