@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan. All right reserved.
 FilePath: /brain-mix/nlp/knowledges/extractive/auto_choice_params.py
 Author: yuanzhenhui
 Date: 2025-10-27 00:25:37
-LastEditTime: 2025-10-29 10:08:21
+LastEditTime: 2025-10-29 21:16:57
 """
 
 import optuna
@@ -51,17 +51,26 @@ class AutoChoiceParams:
 
     def semantic_similarity_score(self, original, summary):
         """计算语义相似度分数"""
+        # 如果摘要为空，返回0.0
         if not summary:
             return 0.0
         try:
+            # 使用共享模型对原始文本进行编码
             emb1 = self.shared_model.encode([original], convert_to_tensor=True)
+            # 使用共享模型对摘要文本进行编码
             emb2 = self.shared_model.encode([summary], convert_to_tensor=True)
+            # 计算余弦相似度
             sim = float(util.cos_sim(emb1, emb2)[0][0])
+            # 计算摘要与原始文本的长度比例
             ratio = len(summary) / max(len(original), 1)
+            # 计算长度比例的惩罚值
             penalty = abs(ratio - 0.5)
+            # 返回最终的语义相似度分数
             return max(0, sim * (1 - penalty))
         except Exception as e:
+            # 捕获异常并记录错误日志
             logger.error(f"Semantic similarity calculation failed: {e}")
+            # 返回0.0作为默认值
             return 0.0
 
     def objective(self, trial, samples):
@@ -69,27 +78,30 @@ class AutoChoiceParams:
         
         # 调优参数空间
         params = {
-            "compression_ratio": trial.suggest_float("compression_ratio", 0.3, 0.7),
-            "lambda_mmr": trial.suggest_float("lambda_mmr", 0.3, 0.9),
-            "position_weight": trial.suggest_float("position_weight", 0.0, 0.3),
-            "named_entity_weight": trial.suggest_float("named_entity_weight", 0.0, 0.5),
-            "number_weight": trial.suggest_float("number_weight", 0.0, 0.5),
-            "length_weight": trial.suggest_float("length_weight", 0.0, 0.3),
+            "compression_ratio": trial.suggest_float("compression_ratio", 0.3, 0.7),  # 压缩比例
+            "lambda_mmr": trial.suggest_float("lambda_mmr", 0.3, 0.9),  # MMR算法参数
+            "position_weight": trial.suggest_float("position_weight", 0.0, 0.3),  # 位置权重
+            "named_entity_weight": trial.suggest_float("named_entity_weight", 0.0, 0.5),  # 命名实体权重
+            "number_weight": trial.suggest_float("number_weight", 0.0, 0.5),  # 数字权重
+            "length_weight": trial.suggest_float("length_weight", 0.0, 0.3),  # 长度权重
         }
 
+        # 初始化内容压缩器
         compressor = ContentCompressor(
-            sentence_length_limit=400,
-            prefilter_ratio=0.7,
-            max_sentences=15,
-            model=self.shared_model
+            sentence_length_limit=400,  # 句子长度限制
+            prefilter_ratio=0.7,  # 预过滤比例
+            max_sentences=15  # 最大句子数量
         )
 
+        # 初始化分数列表和早停参数
         scores = []
-        patience, no_improve, best_score = 5, 0, -np.inf
+        patience, no_improve, best_score = 5, 0, -np.inf  # 早停参数
 
+        # 遍历样本
         for text in tqdm(samples, desc=f"Trial {trial.number}", leave=False, disable=True):
             try:
                 score_str = None
+                # 压缩文本生成摘要
                 summary = compressor.compress_text(text, **params)
                 
                 # 跳过空摘要
@@ -114,29 +126,30 @@ class AutoChoiceParams:
                 注意：只输出一个数字分数（如 8.5），不要其他内容。
                 """
                 counter = 0
+                # 最多尝试3次获取LLM评分
                 while True and counter < 3:
                     score_str = self.api.chat_with_sync(self.compress_content_param, prompt)
                     if score_str:
                         break
                     else:
                         counter += 1
-                logger.info(f"LLM score use : {counter+1} times.")
                     
                 if score_str:
+                    # 清理评分字符串
                     score_str = re.sub(r'[^\d.]', '', score_str)
                     if score_str and score_str.replace('.', '', 1).isdigit():
                         llm_score = float(score_str)
                         # 限制范围
                         llm_score = max(1.0, min(10.0, llm_score))
                         
-                        # 语义相似度
+                        # 计算语义相似度分数
                         sss_score = self.semantic_similarity_score(text, summary)
                         
-                        # 综合得分
+                        # 计算综合得分
                         final_score = sss_score * 5.0 + llm_score * 0.5  # 归一化到 0-10
                         scores.append(final_score)
                         
-                        # 简易早停
+                        # 简易早停逻辑
                         if final_score > best_score:
                             best_score = final_score
                             no_improve = 0
@@ -149,17 +162,18 @@ class AutoChoiceParams:
                 logger.error(f"Error in trial {trial.number}: {str(e)[:100]}")
                 continue
 
+        # 如果没有有效分数，返回0.0
         if not scores:
             logger.warning(f"Trial {trial.number} got no valid scores!")
             return 0.0
         
+        # 计算平均分数并记录日志
         avg_score = np.mean(scores)
         logger.info(f"Trial {trial.number} | Score={avg_score:.4f} | Params={params}")
         return avg_score
 
     def run_optimization(self, texts, n_trials=50):
-        """运行 Optuna 参数优化"""
-        logger.info("🚀 Starting Optuna parameter optimization...")
+        logger.info("Starting Optuna parameter optimization...")
         logger.info(f"Total samples: {len(texts)}, Trials: {n_trials}")
         
         study = optuna.create_study(direction="maximize")
@@ -182,25 +196,7 @@ class AutoChoiceParams:
 
 if __name__ == "__main__":
     docs_list = []
-    search_body = {
-        "query": {"query_string": {"query": "*"}},
-        "size": 10000,
-        "from": 0,
-        "sort": {
-            "_script": {
-                "script": "Math.random()",
-                "type": "number",
-                "order": "asc"
-            }
-        }
-    }
-    results = es.find_by_body(name="es_vct_article_industry_512",body=search_body)
-    for result in results:
-        content = result["_source"]["article_text"]
-        if "【正文】" in content:
-            docs_list.append(content.split("【正文】")[1])
-    
     acp = AutoChoiceParams()
-    best_params = acp.run_optimization(docs_list, n_trials=80)
+    best_params = acp.run_optimization(docs_list, n_trials=10)
     logger.info("\n最终最优参数:")
     logger.info(best_params)
