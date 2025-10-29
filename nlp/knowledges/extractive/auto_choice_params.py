@@ -79,8 +79,8 @@ class AutoChoiceParams:
 
         compressor = ContentCompressor(
             sentence_length_limit=400,
-            prefilter_ratio=0.6,
-            max_sentences=4,
+            prefilter_ratio=0.7,
+            max_sentences=15,
             model=self.shared_model
         )
 
@@ -89,6 +89,7 @@ class AutoChoiceParams:
 
         for text in tqdm(samples, desc=f"Trial {trial.number}", leave=False, disable=True):
             try:
+                score_str = None
                 summary = compressor.compress_text(text, **params)
                 
                 # 跳过空摘要
@@ -112,29 +113,37 @@ class AutoChoiceParams:
 
                 注意：只输出一个数字分数（如 8.5），不要其他内容。
                 """
-                
-                score_str = self.api.chat_with_sync(self.compress_content_param, prompt)
-                score_str = re.sub(r'[^\d.]', '', score_str)
-                if score_str and score_str.replace('.', '', 1).isdigit():
-                    llm_score = float(score_str)
-                    # 限制范围
-                    llm_score = max(1.0, min(10.0, llm_score))
-                    
-                    # 语义相似度
-                    sss_score = self.semantic_similarity_score(text, summary)
-                    
-                    # 综合得分
-                    final_score = sss_score * 5.0 + llm_score * 0.5  # 归一化到 0-10
-                    scores.append(final_score)
-                    
-                    # 简易早停
-                    if final_score > best_score:
-                        best_score = final_score
-                        no_improve = 0
+                counter = 0
+                while True and counter < 3:
+                    score_str = self.api.chat_with_sync(self.compress_content_param, prompt)
+                    if score_str:
+                        break
                     else:
-                        no_improve += 1
-                        if no_improve >= patience:
-                            break
+                        counter += 1
+                logger.info(f"LLM score use : {counter+1} times.")
+                    
+                if score_str:
+                    score_str = re.sub(r'[^\d.]', '', score_str)
+                    if score_str and score_str.replace('.', '', 1).isdigit():
+                        llm_score = float(score_str)
+                        # 限制范围
+                        llm_score = max(1.0, min(10.0, llm_score))
+                        
+                        # 语义相似度
+                        sss_score = self.semantic_similarity_score(text, summary)
+                        
+                        # 综合得分
+                        final_score = sss_score * 5.0 + llm_score * 0.5  # 归一化到 0-10
+                        scores.append(final_score)
+                        
+                        # 简易早停
+                        if final_score > best_score:
+                            best_score = final_score
+                            no_improve = 0
+                        else:
+                            no_improve += 1
+                            if no_improve >= patience:
+                                break
                             
             except Exception as e:
                 logger.error(f"Error in trial {trial.number}: {str(e)[:100]}")
@@ -175,7 +184,7 @@ if __name__ == "__main__":
     docs_list = []
     search_body = {
         "query": {"query_string": {"query": "*"}},
-        "size": 5000,
+        "size": 10000,
         "from": 0,
         "sort": {
             "_script": {
@@ -192,6 +201,6 @@ if __name__ == "__main__":
             docs_list.append(content.split("【正文】")[1])
     
     acp = AutoChoiceParams()
-    best_params = acp.run_optimization(docs_list, n_trials=10)
+    best_params = acp.run_optimization(docs_list, n_trials=80)
     logger.info("\n最终最优参数:")
     logger.info(best_params)

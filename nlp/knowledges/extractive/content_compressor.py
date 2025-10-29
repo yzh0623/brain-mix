@@ -12,6 +12,8 @@ import math
 import jieba
 import jieba.posseg as pseg
 import numpy as np
+import torch.multiprocessing as mp
+import multiprocessing
 from typing import List, Optional
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.metrics.pairwise import cosine_similarity
@@ -22,6 +24,7 @@ project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os
 sys.path.append(os.path.join(project_dir, 'utils'))
 
 import const_util as CU
+from common_util import CommonUtil as COMU
 from yaml_util import YamlUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
@@ -31,7 +34,8 @@ SENTENCE_SPLIT_RE = re.compile(r'([。！？；;!?]|\n+)')
 # 数字日期正则
 NUMBER_RE = re.compile(r'\d+')
 DATE_RE = re.compile(r'(\d{4}[-年/.]\d{1,2}[-月/.]\d{1,2}|\d{1,2}月\d{1,2}日)')
-
+# 核心数
+CORE_COUNT = 4
 
 class ContentCompressor:
     def __init__(self,
@@ -56,6 +60,9 @@ class ContentCompressor:
         :param model_name: 模型名称（当 model 为 None 时使用）
         :param device: 设备（当 model 为 None 时使用）
         """
+        
+        mp.set_start_method('spawn', force=True)
+        
         self.sentence_length_limit = sentence_length_limit
         self.prefilter_ratio = prefilter_ratio
         self.prefilter_k = prefilter_k
@@ -258,42 +265,84 @@ class ContentCompressor:
             summary = summary[:self.sentence_length_limit]
         return summary
 
-    def compress_documents(self, docs: List[str], **compress_kwargs) -> List[str]:
-        """批量压缩文档（单进程模式）"""
-        logger.info(f"Compressing {len(docs)} docs in single-process mode...")
-        results = []
-        
+    def _split_and_compress(self, split_keyword, docs: List[str], results: List[str], **compress_kwargs):
         for doc in docs:
-            try:
+            if split_keyword:
+                # 查找 split_keyword 在字符串中的位置
+                idx = doc.find(split_keyword)
+                if idx != -1:
+                    # 获取关键字后内容
+                    before = doc[:idx + len(split_keyword)]
+                    after = doc[idx + len(split_keyword):]
+                    compressed = self.compress_text(after, **compress_kwargs)
+                    results.append(before + compressed)
+                else:
+                    # 未找到关键字，直接压缩全文
+                    results.append(self.compress_text(doc, **compress_kwargs))
+            else:
+                # 未指定关键字，直接压缩全文
                 results.append(self.compress_text(doc, **compress_kwargs))
-            except Exception as e:
-                logger.error(f"Compression failed: {e}")
-                results.append("")
+
+    def compress_documents(self, docs: List[str], split_keyword: Optional[str] = None, **compress_kwargs) -> List[str]:
+        """批量压缩文档（多进程模式）"""
         
-        return results
-
-
-# ---------------- 示例运行 ----------------
+        logger.info(f"Compressing {len(docs)} docs in multi-process mode...")
+        manager = multiprocessing.Manager()
+        results = manager.list()
+        processes = []
+        doc_batch_array = COMU.split_array(docs, CORE_COUNT)
+        for docs_batch in doc_batch_array:
+            p = multiprocessing.Process(
+                target=self._split_and_compress,
+                args=(split_keyword, docs_batch, results),
+                kwargs=compress_kwargs
+            )
+            processes.append(p)
+            p.start()
+        for p in processes:
+            p.join()
+        return list(results)
+    
+    
 if __name__ == "__main__":
-    sample = """
-    鸡血藤 行情疲软鸡血藤近期行情疲软，商家积极销售货源，市场少商关注，货源走销不快，进口货多要价在9-10元，国产货6元左右。 金银花 购销一般 市场金银花购销一般，货源以实际需求购销为主，行情暂稳，现市场河南统货要价120-125元/千克，山东统货要价110元左右，河北青花货要价130元左右。
-    """
-
+    
+    from persistence.elastic_util import ElasticUtil
+    es = ElasticUtil()
+    
+    docs_list = []
+    search_body = {
+        "query": {"query_string": {"query": "*"}},
+        "size": 10000,
+        "from": 0,
+        "sort": {
+            "_script": {
+                "script": "Math.random()",
+                "type": "number",
+                "order": "asc"
+            }
+        }
+    }
+    results = es.find_by_body(name="es_vct_article_industry_512",body=search_body)
+    docs_list.extend(result["_source"]["article_text"] for result in results)
+    
     compressor = ContentCompressor(
         sentence_length_limit=400,
-        prefilter_ratio=0.6,
-        max_sentences=4
+        prefilter_ratio=0.7,
+        max_sentences=15
     )
 
-    summary = compressor.compress_text(
-        sample,
-        compression_ratio=0.4,
-        lambda_mmr=0.6,
-        position_weight=0.15,
-        named_entity_weight=0.3,
-        number_weight=0.25,
-        length_weight=0.05
+    summary = compressor.compress_documents(
+        docs=docs_list,
+        split_keyword="【正文】",
+        compression_ratio=0.4297,
+        lambda_mmr=0.5756,
+        position_weight=0.2740,
+        named_entity_weight=0.4062,
+        number_weight=0.1137,
+        length_weight=0.1979
     )
 
-    logger.info("---- Summary ----")
-    logger.info(summary)
+    logger.info("---- Summary ----\n")
+    for s in summary:
+        logger.info(s)
+        logger.info("----\n")
