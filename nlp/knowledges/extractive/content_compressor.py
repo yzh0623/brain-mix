@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan. All right reserved.
 FilePath: /brain-mix/nlp/knowledges/extractive/content_compressor.py
 Author: yuanzhenhui
 Date: 2025-10-27 00:07:32
-LastEditTime: 2025-10-29 21:15:46
+LastEditTime: 2025-10-30 10:47:19
 """
 
 import os
@@ -219,12 +219,12 @@ class ContentCompressor:
 
     def compress_text(self,
                       text: str,
-                      compression_ratio: float = 0.4638,
-                      lambda_mmr: float = 0.7374,
-                      position_weight: float = 0.2642,
-                      named_entity_weight: float = 0.2048,
-                      number_weight: float = 0.351,
-                      length_weight: float = 0.1192) -> str:
+                      compression_ratio: float = 0.25,
+                      lambda_mmr: float = 0.6,
+                      position_weight: float = 0.10,
+                      named_entity_weight: float = 0.20,
+                      number_weight: float = 0.35,
+                      length_weight: float = 0.10) -> str:
         """
         对文本进行摘要
 
@@ -312,8 +312,18 @@ class ContentCompressor:
         # 如果摘要长度超过限制，截断
         if len(summary) > self.sentence_length_limit:
             summary = summary[:self.sentence_length_limit]
-        return summary
+        return self.clean_and_format(summary)
 
+    def clean_and_format(self, compress_text: str) -> str:
+        # 修正双逗号
+        s = re.sub('，，+', '，', compress_text)
+        # 去掉多余空格（中文环境）
+        s = re.sub(r'\s+', ' ', s).strip()
+        # 强制每个药材一行：以药材名后保留句号或换行（如果你有药材名单更稳）
+        # 简单策略：在每个“。 ”之后换行（如果原文本使用了句号）
+        s = s.replace('。 ', '。\n')
+        return s
+    
     def _split_and_compress(self, split_keyword, docs: List[str], results: List[str], **compress_kwargs):
         """
         将文档列表压缩成摘要列表
@@ -388,10 +398,15 @@ class ContentCompressor:
         return results
     
 if __name__ == "__main__":
-    docs_list = []
+    content_str = "鸡血藤 行情疲软鸡血藤近期行情疲软，商家积极销售货源，市场少商关注，货源走销不快，进口货多要价在9-10元，国产货6元左右。山茱萸 行情疲软山茱萸市场行情疲软，现药厂货售价53-54元，饮片货63-64元，筒子皮70元，市场需求一般。苦杏仁 走销稍快苦杏仁市场货源走销稍快，正值销售旺季，价格平稳，内蒙货25元左右，山西货23-24元。金银花 购销一般 市场金银花购销一般，货源以实际需求购销为主，行情暂稳，现市场河南统货要价120-125元/千克，山东统货要价110元左右，河北青花货要价130元左右。山楂 走动尚可市场山楂新货上市购销有商购货走销，行情小幅调整，目前市场山楂价格机器统片8-9元左右，手工统片12-13元左右，山楂无籽货20-21元左右，中心选货30-35元左右。黑枸杞 购销一般市场黑枸杞新货来货增多，货源流通需求暂时一般，行情暂稳，现市场黑枸杞小米统货售价20-25元左右，中等货售价40-50元左右，选货售价60-90元不等/千克。蛇床子 行情暂稳市场蛇床子购销尚可，市场货源批量购销，行情小幅波动，目前市场蛇床子统货售价26-27元/千克，选货售价31-32元左右。甘草 货源充足 市场甘草货源增多，需求购销走动一般，，行情小幅震荡调整，现在市场新疆甘草统片20-25元左右/千克，甘肃统片30-35元上下，药厂货售价15-25元不等。白花蛇舌草 走动一般 市场白花蛇舌草来货增多货源充足，行情调整，目前市场白花蛇舌草家种统货价8元左右/千克，统片售价11-12元上下。公丁香 行情平稳市场公丁香购销不快，货源暂时充足需求一般,货源小批量购销为主，行情暂稳，目前市场公丁香大丁货价格在58-60元左右。黄连 行情震荡市场黄连购销一般，近期随着新货上市购销，市面货源走动一般，来货量增多，货源需求暂时不佳小批量走动，行情震荡，目前市场鸡爪连售价330-350元/千克，单枝售价350-360元左右。康美中药城供求信息平台药材买卖，就来康美中药城Mini Program"
     compressor = ContentCompressor()
-    summary = compressor.compress_documents(
-        docs=docs_list,
-        split_keyword="【正文】"
-    )
-    logger.info(f"---- Summary ----{len(summary)}\n")
+    summary = compressor.compress_text(text=content_str)
+    logger.info("---- Summary ----\n")
+    logger.info(summary)
+    
+    # docs_list = []
+    # summary = compressor.compress_documents(
+    #     docs=docs_list,
+    #     split_keyword="【正文】"
+    # )
+    # logger.info(f"---- Summary ----{len(summary)}\n")

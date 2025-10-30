@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan. All right reserved.
 FilePath: /brain-mix/nlp/knowledges/extractive/auto_choice_params.py
 Author: yuanzhenhui
 Date: 2025-10-27 00:25:37
-LastEditTime: 2025-10-29 21:16:57
+LastEditTime: 2025-10-30 11:28:56
 """
 
 import optuna
@@ -78,9 +78,9 @@ class AutoChoiceParams:
         
         # 调优参数空间
         params = {
-            "compression_ratio": trial.suggest_float("compression_ratio", 0.3, 0.7),  # 压缩比例
-            "lambda_mmr": trial.suggest_float("lambda_mmr", 0.3, 0.9),  # MMR算法参数
-            "position_weight": trial.suggest_float("position_weight", 0.0, 0.3),  # 位置权重
+            "compression_ratio": trial.suggest_float("compression_ratio", 0.2, 0.8),  # 压缩比例
+            "lambda_mmr": trial.suggest_float("lambda_mmr", 0.1, 0.9),  # MMR算法参数
+            "position_weight": trial.suggest_float("position_weight", 0.0, 0.5),  # 位置权重
             "named_entity_weight": trial.suggest_float("named_entity_weight", 0.0, 0.5),  # 命名实体权重
             "number_weight": trial.suggest_float("number_weight", 0.0, 0.5),  # 数字权重
             "length_weight": trial.suggest_float("length_weight", 0.0, 0.3),  # 长度权重
@@ -186,10 +186,10 @@ class AutoChoiceParams:
         )
 
         logger.info("\n" + "="*50)
-        logger.info("🏆 最优参数配置:")
+        logger.info("最优参数配置:")
         for k, v in study.best_params.items():
             logger.info(f"  {k}: {v:.4f}")
-        logger.info(f"  最佳得分: {study.best_value:.4f}")
+        logger.info(f"最佳得分: {study.best_value:.4f}")
         logger.info("="*50)
         
         return study.best_params
