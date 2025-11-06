@@ -2,9 +2,10 @@
 FilePath: /brain-mix/nlp/datasets/step5_turning_data_preparer.py
 Author: yuanzhenhui
 Date: 2025-09-22 10:06:01
-LastEditTime: 2025-09-23 14:25:13
+LastEditTime: 2025-11-06 09:38:35
 """
 
+import re
 import os
 import sys
 import json
@@ -114,26 +115,27 @@ class TurningDataPreparer:
         
         # Get all data sources
         self.data_sources = []
-        data_source_group_sql = f"select data_source from {CU.TMP_ES_INDEX} group by data_source"
+        data_source_group_sql = f"select record_source from {CU.TMP_ES_INDEX} group by record_source"
         data_source_results = self.elastic.find_by_sql(data_source_group_sql)
         data_sources_rows = data_source_results.body["rows"]
         self.data_sources.extend(data_sources_row[0] for data_sources_row in data_sources_rows)
         
         for source in self.data_sources:
-            logger.info(f"Loading data source: {source}")
+            logger.info(f"Loading record source: {source}")
 
             search_body = {
                 "size": ES_BATCH_COUNT,
                 "query": {
                     "bool": {
                         "must": [
-                            {"term": {"data_source": {"value": source}}},
+                            {"term": {"record_source": {"value": source}}},
                             {"term": {"process_status": {"value": 1}}},
                             {"range": {"avg_score": {"gt": avg_score,"boost": 1}}}
                         ],
                         "boost": 1
                     }
-                }
+                },
+                "fields": [{"field": "record_text"}]
             }
 
             # Perform the initial search
@@ -143,10 +145,11 @@ class TurningDataPreparer:
             while hits:
                 for hit in hits:
                     row_entity = hit["_source"]
+                    question, answer = self._split_question_answer(row_entity["record_text"])
                     all_data.append({
                         "messages": [
-                            {"role": "user","content": row_entity["question"]},
-                            {"role": "assistant","content": row_entity["answer"]}
+                            {"role": "user","content": question},
+                            {"role": "assistant","content": answer}
                         ],
                         "source": source
                     })
@@ -160,6 +163,16 @@ class TurningDataPreparer:
                 break
         logger.info(f"Total {len(all_data)} records extracted from Elasticsearch")
         return all_data
+    
+    def _split_question_answer(self,text):
+        pattern = r'【问题】(.*?)【答案】(.*)'
+        match = re.search(pattern, text, re.DOTALL)
+        if match:
+            question = match.group(1).strip()
+            answer = match.group(2).strip()
+            return question, answer
+        else:
+            return text, ""
 
     def prepare_and_save_dataset(self):
         """

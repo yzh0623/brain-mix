@@ -2,7 +2,7 @@
 ACTIVATE="local"
 
 # Temporary Elasticsearch Index and Fields
-TMP_ES_INDEX = "es_gather_qa"
+TMP_ES_INDEX = "es_vct_consultation_record_512_2"
 TMP_ES_VECTOR_FIELDS = "gather_vector_1024"
 
 # Temporary MySQL Table
