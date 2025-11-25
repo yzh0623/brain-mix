@@ -3,16 +3,16 @@ Copyright (c) 2025 by Zhenhui Yuan. All right reserved.
 FilePath: /brain-mix/nlp/models/reasoning/step2_export_openvino_model.py
 Author: yuanzhenhui
 Date: 2025-10-10 19:36:15
-LastEditTime: 2025-10-11 17:19:15
+LastEditTime: 2025-11-25 14:40:55
 """
 
 import shutil
-from transformers import AutoModelForCausalLM
+from transformers import AutoModelForCausalLM,AutoTokenizer
 
 from optimum.intel import OVModelForCausalLM,OVWeightQuantizationConfig
 from optimum.exporters.openvino import export_from_model
 from pathlib import Path
-
+import json
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -46,7 +46,7 @@ class ExportOpenvinoModel:
         self.unsloth_merge_model_dir = self.model_cnf.get_value('models.reasoning.unsloth_merge_model')
         
         # The directory where the OpenVINO model will be saved
-        openvino_model = self.model_cnf.get_value('models.reasoning.openvino_model')
+        openvino_model = self.model_cnf.get_value('models.reasoning.openvino.model')
         shutil.rmtree(openvino_model, ignore_errors=True)
         Path(openvino_model).mkdir(parents=True, exist_ok=True)
         
@@ -193,8 +193,25 @@ class ExportOpenvinoModel:
         if not self.has_ir(self.openvino_int4_model_dir):
             logger.error("Warning: quantized output dir exists but .xml/.bin not found under", self.openvino_int4_model_dir)
             sys.exit(4)
+            
+        try:
+            self.export_tokenizer()
+        except Exception:
+            logger.error("FATAL: Tokenizer export failed. Cannot proceed with openvino-genai.")
+            sys.exit(5)
 
         logger.info("Done.")
+    
+    def export_tokenizer(self):
+        from openvino_tokenizers import convert_tokenizer
+        from openvino import save_model
+        hf_tokenizer = AutoTokenizer.from_pretrained(
+            self.unsloth_merge_model_dir,
+            trust_remote_code=True
+        )
+        ov_tokenizer, ov_detokenizer = convert_tokenizer(hf_tokenizer, with_detokenizer=True)
+        save_model(ov_tokenizer, os.path.join(self.openvino_int4_model_dir,"openvino_tokenizer.xml"))
+        save_model(ov_detokenizer, os.path.join(self.openvino_int4_model_dir,"openvino_detokenizer.xml"))
 
 if __name__ == "__main__":
     eom = ExportOpenvinoModel()

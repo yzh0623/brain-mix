@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan. All right reserved.
 FilePath: /brain-mix/nlp/knowledges/extractive/auto_choice_params.py
 Author: yuanzhenhui
 Date: 2025-10-27 00:25:37
-LastEditTime: 2025-10-30 11:28:56
+LastEditTime: 2025-11-25 09:27:30
 """
 
 import optuna
@@ -49,66 +49,93 @@ class AutoChoiceParams:
         )
         logger.info("Model loaded successfully!")
 
-    def semantic_similarity_score(self, original, summary):
-        """计算语义相似度分数"""
-        # 如果摘要为空，返回0.0
+    def semantic_similarity_score(self, original: str, summary: str) -> float:
+        """
+        Calculate the semantic similarity score between the original text and the summary.
+
+        This function uses the SentenceTransformer library to calculate the semantic similarity score between the original text and the summary.
+        The score is then adjusted based on the ratio of the summary length to the original length.
+        If the ratio is not close to 0.5, a penalty is applied to the score.
+
+        Args:
+            original (str): The original text.
+            summary (str): The summary text.
+
+        Returns:
+            float: The semantic similarity score between the original text and the summary.
+        """
         if not summary:
             return 0.0
         try:
-            # 使用共享模型对原始文本进行编码
+            # Encode the original and summary texts into embeddings
             emb1 = self.shared_model.encode([original], convert_to_tensor=True)
-            # 使用共享模型对摘要文本进行编码
             emb2 = self.shared_model.encode([summary], convert_to_tensor=True)
-            # 计算余弦相似度
+            
+            # Calculate the semantic similarity score
             sim = float(util.cos_sim(emb1, emb2)[0][0])
-            # 计算摘要与原始文本的长度比例
+            
+            # Calculate the ratio of the summary length to the original length
             ratio = len(summary) / max(len(original), 1)
-            # 计算长度比例的惩罚值
+            
+            # Apply a penalty if the ratio is not close to 0.5
             penalty = abs(ratio - 0.5)
-            # 返回最终的语义相似度分数
-            return max(0, sim * (1 - penalty))
+            score = max(0, sim * (1 - penalty))
+            return score
         except Exception as e:
-            # 捕获异常并记录错误日志
-            logger.error(f"Semantic similarity calculation failed: {e}")
-            # 返回0.0作为默认值
+            logger.error(f"semantic similarity calculation failed: {e}")
             return 0.0
 
     def objective(self, trial, samples):
-        """Optuna 目标函数"""
-        
-        # 调优参数空间
+        """
+        This function is the objective function that Optuna will use to evaluate the performance of the model.
+
+        It takes a trial object as an argument and returns a float value representing the performance of the model.
+
+        The function first loads the model and tokenizer using the hyperparameters suggested by Optuna.
+        Then, it runs the training session and evaluates the model on the validation set if provided.
+        Finally, it returns the evaluation loss or the training loss if the evaluation loss is not available.
+
+        Args:
+            trial (optuna.Trial): The trial object that contains the hyperparameters suggested by Optuna.
+            samples (list[str]): The list of samples to evaluate the model on.
+
+        Returns:
+            float: The evaluation loss or the training loss if the evaluation loss is not available.
+        """
+        # Define the hyperparameters to be optimized
         params = {
-            "compression_ratio": trial.suggest_float("compression_ratio", 0.2, 0.8),  # 压缩比例
-            "lambda_mmr": trial.suggest_float("lambda_mmr", 0.1, 0.9),  # MMR算法参数
-            "position_weight": trial.suggest_float("position_weight", 0.0, 0.5),  # 位置权重
-            "named_entity_weight": trial.suggest_float("named_entity_weight", 0.0, 0.5),  # 命名实体权重
-            "number_weight": trial.suggest_float("number_weight", 0.0, 0.5),  # 数字权重
-            "length_weight": trial.suggest_float("length_weight", 0.0, 0.3),  # 长度权重
+            "compression_ratio": trial.suggest_float("compression_ratio", 0.2, 0.8),
+            "lambda_mmr": trial.suggest_float("lambda_mmr", 0.1, 0.9),
+            "position_weight": trial.suggest_float("position_weight", 0.0, 0.5),
+            "named_entity_weight": trial.suggest_float("named_entity_weight", 0.0, 0.5),
+            "number_weight": trial.suggest_float("number_weight", 0.0, 0.5),
+            "length_weight": trial.suggest_float("length_weight", 0.0, 0.3),
         }
 
-        # 初始化内容压缩器
+        # Initialize the ContentCompressor object
         compressor = ContentCompressor(
-            sentence_length_limit=400,  # 句子长度限制
-            prefilter_ratio=0.7,  # 预过滤比例
-            max_sentences=15  # 最大句子数量
+            sentence_length_limit=400,
+            prefilter_ratio=0.7,
+            max_sentences=15
         )
 
-        # 初始化分数列表和早停参数
+        # Initialize the lists to store the scores
         scores = []
-        patience, no_improve, best_score = 5, 0, -np.inf  # 早停参数
 
-        # 遍历样本
+        # Initialize the patience, no_improve, and best_score variables
+        patience, no_improve, best_score = 5, 0, -np.inf
+
+        # Iterate over the samples and evaluate the model
         for text in tqdm(samples, desc=f"Trial {trial.number}", leave=False, disable=True):
             try:
                 score_str = None
-                # 压缩文本生成摘要
+                # Compress the text using the hyperparameters
                 summary = compressor.compress_text(text, **params)
                 
-                # 跳过空摘要
                 if not summary or len(summary.strip()) == 0:
                     continue
                 
-                # LLM 评分
+                # Ask the AI to generate code based on human instructions
                 prompt = f"""
                 请对以下摘要压缩质量进行评分。
 
@@ -126,8 +153,8 @@ class AutoChoiceParams:
                 注意：只输出一个数字分数（如 8.5），不要其他内容。
                 """
                 counter = 0
-                # 最多尝试3次获取LLM评分
                 while True and counter < 3:
+                    # Ask the AI to generate code based on human instructions
                     score_str = self.api.chat_with_sync(self.compress_content_param, prompt)
                     if score_str:
                         break
@@ -135,21 +162,23 @@ class AutoChoiceParams:
                         counter += 1
                     
                 if score_str:
-                    # 清理评分字符串
+                    # Remove the non-digit characters from the score string
                     score_str = re.sub(r'[^\d.]', '', score_str)
+                    # Check if the score string is a valid number
                     if score_str and score_str.replace('.', '', 1).isdigit():
+                        # Convert the score string to a float
                         llm_score = float(score_str)
-                        # 限制范围
+                        # Normalize the score to be between 1 and 10
                         llm_score = max(1.0, min(10.0, llm_score))
                         
-                        # 计算语义相似度分数
+                        # Calculate the semantic similarity score
                         sss_score = self.semantic_similarity_score(text, summary)
                         
-                        # 计算综合得分
-                        final_score = sss_score * 5.0 + llm_score * 0.5  # 归一化到 0-10
+                        # Calculate the final score
+                        final_score = sss_score * 5.0 + llm_score * 0.5
                         scores.append(final_score)
                         
-                        # 简易早停逻辑
+                        # Update the best score and no_improve variables
                         if final_score > best_score:
                             best_score = final_score
                             no_improve = 0
@@ -162,26 +191,54 @@ class AutoChoiceParams:
                 logger.error(f"Error in trial {trial.number}: {str(e)[:100]}")
                 continue
 
-        # 如果没有有效分数，返回0.0
+        # Check if there are any valid scores
         if not scores:
             logger.warning(f"Trial {trial.number} got no valid scores!")
             return 0.0
         
-        # 计算平均分数并记录日志
+        # Calculate the average score
         avg_score = np.mean(scores)
         logger.info(f"Trial {trial.number} | Score={avg_score:.4f} | Params={params}")
         return avg_score
 
     def run_optimization(self, texts, n_trials=50):
+        """
+        Runs the Optuna parameter optimization.
+
+        Args:
+            texts (list[str]): The list of texts to optimize the model on.
+            n_trials (int): The number of trials to run. Defaults to 50.
+
+        Returns:
+            dict: The best parameters found by the optimization process.
+        """
         logger.info("Starting Optuna parameter optimization...")
         logger.info(f"Total samples: {len(texts)}, Trials: {n_trials}")
         
+        # Create the Optuna study object
         study = optuna.create_study(direction="maximize")
-        func = lambda trial: self.objective(trial, texts)
+        
+        # Define the objective function
+        def objective(trial, texts):
+            """
+            The objective function to be optimized.
+
+            Args:
+                trial (optuna.Trial): The trial object that contains the hyperparameters suggested by Optuna.
+                texts (list[str]): The list of texts to optimize the model on.
+
+            Returns:
+                float: The evaluation score of the model.
+            """
+            # Evaluate the model on the validation set
+            score = self.objective(trial, texts)
+            return score
+        
+        # Run the optimization
         study.optimize(
-            func, 
+            objective, 
             n_trials=n_trials, 
-            n_jobs=1,  # 必须使用单进程
+            n_jobs=1,
             show_progress_bar=True
         )
 
