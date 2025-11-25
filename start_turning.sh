@@ -3,7 +3,7 @@
 today=$(date +%Y_%m_%d)
 
 py_path=/home/paohe/anaconda3/envs/brain_mix
-workspace_path=/home/paohe/llm/nlp/brain-mix
+workspace_path=/home/paohe/llm/yzh/brain-mix
 log_path=/home/paohe/Documents/tmp/logs/brain-mix
 
 # model turning script 

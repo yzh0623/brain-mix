@@ -109,9 +109,9 @@ class TurningDataPreparer:
         all_data = []
         
         # Get the average score of all records
-        search_avg_sql = f"select avg(avg_score) from {CU.TMP_ES_INDEX} where process_status = 1"
-        avg_score_results = self.elastic.find_by_sql(search_avg_sql)
-        avg_score = avg_score_results.body["rows"][0][0]
+        # search_avg_sql = f"select avg(avg_score) from {CU.TMP_ES_INDEX}"
+        # avg_score_results = self.elastic.find_by_sql(search_avg_sql)
+        # avg_score = avg_score_results.body["rows"][0][0]
         
         # Get all data sources
         self.data_sources = []
@@ -128,9 +128,7 @@ class TurningDataPreparer:
                 "query": {
                     "bool": {
                         "must": [
-                            {"term": {"record_source": {"value": source}}},
-                            {"term": {"process_status": {"value": 1}}},
-                            {"range": {"avg_score": {"gt": avg_score,"boost": 1}}}
+                            {"term": {"record_source": {"value": source}}}
                         ],
                         "boost": 1
                     }
