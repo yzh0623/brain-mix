@@ -1,340 +1,587 @@
+"""
+Copyright (c) 2025 by Zhenhui Yuan. All right reserved.
+FilePath: /brain-mix/nlp/models/reasoning/step3_openvino_runtime.py
+Author: yuanzhenhui
+Date: 2025-11-25 09:46:31
+LastEditTime: 2025-12-02 08:37:22
+"""
+
 import openvino_genai as ov_genai
-from threading import Thread, Lock, Semaphore
+import threading
+from threading import Lock, Event
 from queue import Queue, Empty
-from typing import Dict, Any, Generator, List, Union
-import json
+from typing import Dict, List, Generator, Union
 import time
 import os
+import re
 import sys
 
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.append(os.path.join(project_dir, 'utils'))
-
 import const_util as CU
 from yaml_util import YamlUtil
 from logging_util import LoggingUtil
 logger = LoggingUtil(os.path.basename(__file__).replace(".py", ""))
 
-class OpenvinoRuntime:
+nlp_cnf = os.path.join(project_dir, 'resources','config', CU.ACTIVATE, 'nlp_cnf.yml')
+YamlNLP = YamlUtil(nlp_cnf)
+
+THINK_START_TAG = "<think>"
+THINK_END_TAG = "</think>"
+
+class PromptTemplates:
+
+    SYSTEM_PROMPT_TCM = """
+        身份：资深中医医师，专注于大健康、康养和药食同源。
+        目标：根据用户描述，提供精准、详实且口语化的健康建议。
+        要求：回答必须严格按照【证型】和【调理】两个明确的结构化标签输出，回答完必须输出 “【EOA】”，严禁重复。
+
+        格式：
+        【证型】：[给出1-2个最可能的证型，保持口语化]
+        【调理】：[提供详尽的分点指导，包括食疗、药材、生活习惯建议]
+        【EOA】
+        """
+
+    @classmethod
+    def get_messages(cls, user_query: str) -> List[Dict[str, str]]:
+        """
+        Convert a user query into a list of messages.
+
+        The messages will be used to ask a language model to generate health advice.
+        The language model will be given two messages:
+        - A system message with a prompt to generate health advice.
+        - A user message with the user query.
+
+        Parameters:
+            user_query (str): The user query.
+
+        Returns:
+            List[Dict[str, str]]: A list of two messages.
+        """
+
+        messages = [{
+            # The role of this message is "system".
+            "role": "system", 
+            # The content of this message is the system prompt.
+            "content": cls.SYSTEM_PROMPT_TCM
+        }]
+        # Add a user message with the user query.
+        messages.append({"role": "user", "content": user_query})
+        return messages
+
+class ChunkingStreamer:
     
+    def __init__(
+        self,
+        token_queue: Queue,
+        stop_strings: List[str],
+        timeout_seconds: float = 30.0,
+        chunk_size: int = 15,
+    ):
+        """
+        Initialize the ChunkingStreamer object.
+
+        Parameters:
+            token_queue (Queue): The queue to store the generated tokens.
+            stop_strings (List[str]): The list of stop strings to stop the generation.
+            timeout_seconds (float, optional): The timeout seconds to stop the generation. Defaults to 30.0.
+            chunk_size (int, optional): The chunk size to generate tokens. Defaults to 15.
+        """
+        self.token_queue = token_queue
+        self.stop_strings = stop_strings
+        self.timeout_seconds = timeout_seconds
+        self.chunk_size = chunk_size
+        
+        self.generated_text = ""
+        self.buffer = ""
+        self.stop_requested = Event()
+        self.stop_reason = ""
+        self.start_time = time.time()
+        self.token_count = 0
+        
+        # The punctuation to be used to split the text into sentences.
+        self.punctuation = ['。', '！', '？', '；', '\n']
+        
+        # The tags to be used to detect the thought mode.
+        self.in_thought_mode = False 
+        
+
+    def __call__(self, subword: str) -> bool:
+        """
+        Process a subword and return True if the generation should be stopped.
+
+        Parameters:
+            subword (str): The subword to be processed.
+
+        Returns:
+            bool: True if the generation should be stopped, False otherwise.
+        """
+        if self.stop_requested.is_set():
+            return True
+        
+        # Check if the generation has timed out
+        if time.time() - self.start_time > self.timeout_seconds:
+            self._flush_buffer_and_stop("timeout")
+            return True
+
+        processed_subword = subword
+        
+        # Process the subword and handle the thought mode
+        while True:
+            if self.in_thought_mode:
+                # Find the end of the thought mode
+                end_pos = processed_subword.find(THINK_END_TAG)
+                if end_pos == -1:
+                    # If the end of the thought mode is not found, stop the generation
+                    return False
+                else:
+                    # Trim the processed subword and exit the thought mode
+                    self.in_thought_mode = False
+                    processed_subword = processed_subword[end_pos + len(THINK_END_TAG):]
+                    if not processed_subword: return False
+            else:
+                # Find the start of the thought mode
+                start_pos = processed_subword.find(THINK_START_TAG)
+                if start_pos == -1:
+                    break
+                else:
+                    # Trim the processed subword and enter the thought mode
+                    safe_content = processed_subword[:start_pos]
+                    if safe_content:
+                        self.buffer += safe_content
+                        self.generated_text += safe_content
+                        self.token_count += 1
+
+                    self.in_thought_mode = True
+                    processed_subword = processed_subword[start_pos + len(THINK_START_TAG):]
+                    if not processed_subword: return False
+        
+        # Check if the processed subword contains any stop strings
+        temp_text = self.buffer + processed_subword
+        for stop_str in self.stop_strings:
+            if stop_str in temp_text:
+                self._stop_and_trim(stop_str, processed_subword.strip())
+                return True
+
+        # Add the processed subword to the buffer
+        self.buffer += processed_subword
+        self.generated_text += processed_subword
+        self.token_count += 1
+
+        # Check if the buffer is full
+        if len(self.buffer) >= self.chunk_size:
+            # Find the last punctuation in the buffer
+            split_pos = -1
+            for p in self.punctuation:
+                pos = self.buffer.rfind(p)
+                if pos > split_pos:
+                    split_pos = pos
+
+            # Trim the buffer and send the content to the queue
+            content_to_send = ""
+            if split_pos != -1 and len(self.buffer) - (split_pos + 1) < self.chunk_size:
+                content_to_send = self.buffer[:split_pos + 1]
+                self.buffer = self.buffer[split_pos + 1:]
+            else:
+                content_to_send = self.buffer[:self.chunk_size]
+                self.buffer = self.buffer[self.chunk_size:]
+            self.token_queue.put(content_to_send)
+        return False
+
+    def _stop_and_trim(self, stop_str: str, last_subword: str):
+        """
+        Trim the buffer and stop the generation when a stop string is found.
+
+        Parameters:
+            stop_str (str): The stop string to look for.
+            last_subword (str): The last subword generated by the model.
+
+        Returns:
+            None
+        """
+        full_check_string = self.buffer + last_subword
+        stop_pos = full_check_string.find(stop_str)
+        if stop_pos != -1:
+            # Trim the buffer and send the content to the queue
+            content_to_send = full_check_string[:stop_pos]
+            if content_to_send:
+                self.token_queue.put(content_to_send)
+            # Update the generated text and buffer
+            current_buffer_len = len(self.buffer)
+            self.generated_text = self.generated_text[:len(self.generated_text) - current_buffer_len] + content_to_send
+            self.buffer = ""
+        # Request to stop the generation
+        self._request_stop(f"stop_string: {stop_str}")
+    
+    def _flush_buffer_and_stop(self, reason: str):
+        """
+        Flush the buffer and stop the generation.
+
+        Parameters:
+            reason (str): The reason to stop the generation.
+
+        Returns:
+            None
+        """
+        # Flush the buffer and send the content to the queue
+        if self.buffer:
+            self.token_queue.put(self.buffer)
+        self.buffer = ""
+        # Request to stop the generation
+        self._request_stop(reason)
+
+    def _request_stop(self, reason: str) -> bool:
+        """
+        Requests to stop the generation of text.
+
+        Parameters:
+            reason (str): The reason to stop the generation.
+
+        Returns:
+            bool: True if the stop was successful, False otherwise.
+        """
+        self.stop_reason = reason
+        self.stop_requested.set()
+        #print(f"\nEarly stop triggered: {reason} (tokens={self.token_count}, chars={len(self.generated_text)})")
+        return True
+    
+    def end(self):
+        """
+        Ends the generation of text.
+
+        This method is used to end the generation of text. It will flush the buffer and
+        send the content to the queue.
+
+        Returns:
+            None
+        """
+        # Flush the buffer and send the content to the queue
+        if self.buffer:
+            self.token_queue.put(self.buffer)
+        # Add a sentinel to indicate the end of the generation
+        self.token_queue.put(None)
+        self.buffer = ""
+    
+    def get_clean_texts(self) -> str:
+        """
+        Get the cleaned text from the generated text.
+
+        This method removes any remaining <think> tags, stop strings, and formats the text
+        to ensure consistency with the previous generation.
+
+        Returns:
+            str: The cleaned text.
+        """
+        text = self.generated_text
+        
+        # 1. Remove any remaining <think> tags
+        # This is the final insurance to remove any <think> tags that may have been left over
+        text = re.sub(r'<think>.*?</think>', '', text, flags=re.DOTALL)
+        
+        # 2. Remove stop strings
+        # Stop strings are words or phrases that are not allowed to appear in the generated text
+        for stop_str in self.stop_strings:
+            text = re.sub(re.escape(stop_str), '', text, flags=re.I)
+        
+        # Replace 3 or more consecutive newline characters with 2 newline characters
+        text = re.sub(r'\n{3,}', '\n\n', text)
+        return text.strip()
+
+class OpenvinoRuntime:
+
     _instance = None
     _initialized = False
     _init_lock = Lock()
-    
-    def __new__(cls, *args, **kwargs):
-        if cls._instance is None:
-            with cls._init_lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-        return cls._instance
+    _inference_lock = Lock()
+
+    nlp_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'nlp_cnf.yml')
+    YamlNLP = YamlUtil(nlp_cnf)
+
+    DEFAULT_CONFIG = {
+        "model_path": os.path.join(YamlNLP.get_value('models.reasoning.openvino.model'), 'OVMS', YamlNLP.get_value('models.reasoning.openvino.ovms.model_name')),
+        "device": YamlNLP.get_value('models.reasoning.openvino.model_device'),
+
+        "generation": {
+            "max_new_tokens": YamlNLP.get_value('models.reasoning.openvino.genai.max_tokens'),
+            "temperature": YamlNLP.get_value('models.reasoning.openvino.genai.temperature'),
+            "top_p": YamlNLP.get_value('models.reasoning.openvino.genai.top_p'),
+            "top_k": YamlNLP.get_value('models.reasoning.openvino.genai.top_k'),
+            "do_sample": YamlNLP.get_value('models.reasoning.openvino.genai.do_sample'),
+            "repetition_penalty": YamlNLP.get_value('models.reasoning.openvino.genai.repetition_penalty')
+        },
+
+        "early_stop": {
+            "timeout_seconds": YamlNLP.get_value('models.reasoning.openvino.genai.timeout_seconds')
+        },
+
+        "stop_strings": [
+            "<|im_end|>",
+            "<|endoftext|>",
+            "<|im_start|>",
+            "\n\n\n",
+            "【EOA】",
+            "\nUser:",
+            "\nuser:",
+            "Human:",
+            "Assistant:",
+        ]
+    }
 
     def __init__(self):
-        if not OpenvinoRuntime._initialized:
-            with OpenvinoRuntime._init_lock:
-                if not OpenvinoRuntime._initialized:
-                    try:
-                        self._load_config()
-                        self._init_pipeline()
-                        OpenvinoRuntime._initialized = True
-                    except Exception as e:
-                        logger.error(f"Failed to initialize OpenVINO GenAI: {e}")
-                        raise e
-
-    def _load_config(self):
-        """加载配置并构建 GenAI 所需的 GenerationConfig"""
-        self.nlp_cnf = os.path.join(project_dir, 'resources', 'config', CU.ACTIVATE, 'nlp_cnf.yml')
-        nlp_cnf = YamlUtil(self.nlp_cnf)
-        
-        # 加载量化 int4 的模型路径
-        self.model_path = os.path.join(nlp_cnf.get_value('models.reasoning.openvino.model') ,"INT4")
-        
-        # 读取并发限制
-        max_workers = nlp_cnf.get_value('models.reasoning.openvino.genai.worker_threads')
-        # 信号量：用于控制同时进入 C++ 推理引擎的请求数
-        self.semaphore = Semaphore(max_workers)
-        
-        # 推理设备
-        self.device = nlp_cnf.get_value('models.reasoning.openvino.model_device')
-
-        # 构建 GenerationConfig
-        # 这些参数直接传递给 C++ 引擎
-        self.gen_config = ov_genai.GenerationConfig()
-        self.gen_config.max_new_tokens = nlp_cnf.get_value('models.reasoning.openvino.genai.max_tokens')
-        self.gen_config.temperature = nlp_cnf.get_value('models.reasoning.openvino.genai.temperature')
-        self.gen_config.top_p = nlp_cnf.get_value('models.reasoning.openvino.genai.top_p')
-        self.gen_config.top_k = nlp_cnf.get_value('models.reasoning.openvino.genai.top_k')
-        self.gen_config.repetition_penalty = nlp_cnf.get_value('models.reasoning.openvino.genai.repetition_penalty')
-        self.gen_config.do_sample = nlp_cnf.get_value('models.reasoning.openvino.do_sample')
-
-    def _init_pipeline(self):
-        logger.info(f"Loading OpenVINO GenAI Pipeline from {self.model_path} ...")
-        start_t = time.time()
-        
-        # LLMPipeline 是核心类，它会自动加载 Tokenizer 和 模型
-        self.pipe = ov_genai.LLMPipeline(self.model_path, self.device)
-        
-        # 获取 Tokenizer 用于处理聊天模板
-        self.tokenizer = self.pipe.get_tokenizer()
-        logger.info(f"Pipeline loaded in {time.time() - start_t:.2f}s")
-
-    def _apply_template(self, message: Union[str, List[Dict]]) -> str:
         """
-        处理输入格式。
-        如果输入是字符串，直接当作 Prompt (或者封装成 user message)。
-        如果输入是 List (聊天记录)，使用 apply_chat_template 转换。
-        """
-        try:
-            if isinstance(message, str):
-                # 如果只是简单的一句话，封装成标准格式
-                messages = [{"role": "user", "content": message}]
-                return self.tokenizer.apply_chat_template(messages, add_generation_prompt=True)
-            elif isinstance(message, list):
-                return self.tokenizer.apply_chat_template(message, add_generation_prompt=True)
-            else:
-                return str(message)
-        except Exception as e:
-            logger.warning(f"Template application failed, using raw string: {e}")
-            return str(message)
-
-    def _count_tokens(self, text: str) -> int:
-        """
-        使用 OpenVINO GenAI Tokenizer 计算 token 数量
-        """
-        if not text:
-            return 0
-        try:
-            # openvino-genai tokenizer encode 返回的是 TokenizedString
-            encoded = self.tokenizer.encode(text)
-            if hasattr(encoded, 'input_ids'):
-                return len(encoded.input_ids)
-            elif isinstance(encoded, list):
-                return len(encoded)
-            else:
-                logger.debug(f"Unknown tokenizer output type: {type(encoded)}")
-                return len(text) // 3  
-        except Exception:
-            return 0
-
-    def transfor_msg(self, msg: Union[str, List[Dict]]) -> Dict:
-        """
-        同步非流式接口 (简单封装流式)
-        """
-        full_content = ""
-        full_reasoning = ""
+        Initialize the OpenvinoRuntime instance.
         
-        for chunk in self.transfor_stream_msg(msg):
-            if "content" in chunk:
-                full_content += chunk["content"]
-            if "reasoning_content" in chunk:
-                full_reasoning += chunk["reasoning_content"]
-                
-        # 按照你的旧格式返回列表
-        return [
-            {"role": "assistant", "content": full_content, "reasoning_content": full_reasoning}
-        ]
-
-    def transfor_stream_msg(self, msg: Union[str, List[Dict]]):
+        The initialization process involves loading the model from the specified path
+        and setting up the generation configuration.
         """
-        流式推理 (桥接 C++ Callback 到 Python Generator)
-        """
-        prompt = self._apply_template(msg)
-        
-        # 创建一个线程安全的队列，用于存放 C++ 吐出来的 token
-        token_queue = Queue()
-        
-        # 定义 C++ 回调函数
-        # subword: 生成的片段
-        # 作用: 将生成的片段放入队列，供主线程消费
-        def streamer_callback(subword: str) -> bool:
-            token_queue.put(subword)
-            return False # 返回 False 表示继续生成，True 表示停止
-
-        # 定义在子线程中运行的任务
-        def run_inference():
-            with self.semaphore: # 同样受并发限制
-                try:
-                    self.pipe.generate(prompt, self.gen_config, streamer_callback)
-                except Exception as e:
-                    logger.error(f"Stream Error: {e}")
-                    token_queue.put(f"[ERROR: {e}]")
-                finally:
-                    # 放入 None 作为结束信号
-                    token_queue.put(None)
-
-        # 启动子线程运行 C++ 推理
-        # 注意：这里必须用线程，否则 pipe.generate 会阻塞主线程，无法 yield
-        thread = Thread(target=run_inference)
-        thread.start()
-
-        # 主线程：从队列中读取数据并 yield
-        start_time = time.time()
-        token_count = 0
-        buffer = ""
-        in_think = False
-        
-        # 定义可能的标签部分，用于防止切割
-        # 如果 buffer 结尾是 "<", "<t", "<think" 等，先不 yield
-        tag_start_marker = "<think>"
-        tag_end_marker = "</think>"
-
-        while True:
+        if OpenvinoRuntime._initialized:
+            return
+        with OpenvinoRuntime._init_lock:
+            if OpenvinoRuntime._initialized:
+                return
             try:
-                # 等待新片段
-                new_text = token_queue.get(timeout=self.gen_config.max_new_tokens * 1.0)
+                # Initialize the configuration with default values
+                self.config = self.DEFAULT_CONFIG.copy()
                 
-                if new_text is None:
-                    break
+                # Initialize the components, including the model and generation configuration
+                self._init_components()
                 
-                # 如果是错误信息
-                if new_text.startswith("[ERROR:"):
-                    yield {"content": new_text, "reasoning_content": ""}
-                    break
-
-                buffer += new_text
-                
-                # 循环处理 buffer，直到无法再分割
-                while buffer:
-                    processed_chunk = False # 标记本次循环是否处理了数据
-                    
-                    if not in_think:
-                        # 检查是否有开始标签
-                        start_idx = buffer.find(tag_start_marker)
-                        if start_idx != -1:
-                            # 1. 发现 <think>
-                            # yield 标签前的内容 (普通 content)
-                            if start_idx > 0:
-                                chunk = buffer[:start_idx]
-                                chunk_len = self._count_tokens(chunk)
-                                token_count += chunk_len
-                                yield {
-                                    "content": chunk,
-                                    "reasoning_content": "",
-                                    "token_count": chunk_len,
-                                    "total_token_count": token_count,
-                                    "token_rate": token_count / (time.time() - start_time)
-                                }
-                            
-                            # 移除已处理部分和标签
-                            buffer = buffer[start_idx + len(tag_start_marker):]
-                            in_think = True
-                            processed_chunk = True
-                        else:
-                            # 没有发现完整标签，检查是否有"半截"标签的风险
-                            # 例如 buffer 结尾是 "<thi"
-                            partial_match = False
-                            for i in range(1, len(tag_start_marker)):
-                                if buffer.endswith(tag_start_marker[:i]):
-                                    partial_match = True
-                                    break
-                            
-                            if partial_match:
-                                # 有风险，跳出内部循环，等待下一个 new_text 拼接
-                                break 
-                            
-                            # 安全，全部 yield
-                            if buffer:
-                                chunk_len = self._count_tokens(buffer)
-                                token_count += chunk_len
-                                yield {
-                                    "content": buffer,
-                                    "reasoning_content": "",
-                                    "token_count": chunk_len,
-                                    "total_token_count": token_count,
-                                    "token_rate": token_count / (time.time() - start_time)
-                                }
-                                buffer = ""
-                                processed_chunk = True
-
-                    else: # if in_think
-                        # 检查是否有结束标签
-                        end_idx = buffer.find(tag_end_marker)
-                        if end_idx != -1:
-                            # 1. 发现 </think>
-                            # yield 标签前的内容 (思考 content)
-                            chunk = buffer[:end_idx]
-                            if chunk:
-                                chunk_len = self._count_tokens(chunk)
-                                token_count += chunk_len
-                                yield {
-                                    "content": "",
-                                    "reasoning_content": chunk,
-                                    "token_count": chunk_len,
-                                    "total_token_count": token_count,
-                                    "token_rate": token_count / (time.time() - start_time)
-                                }
-                            
-                            # 移除已处理部分和标签
-                            buffer = buffer[end_idx + len(tag_end_marker):]
-                            in_think = False
-                            processed_chunk = True
-                        else:
-                            # 同样检查半截结束标签 "</th..."
-                            partial_match = False
-                            for i in range(1, len(tag_end_marker)):
-                                if buffer.endswith(tag_end_marker[:i]):
-                                    partial_match = True
-                                    break
-                            
-                            if partial_match:
-                                break
-                            
-                            # 安全，全部 yield 为思考内容
-                            if buffer:
-                                chunk_len = self._count_tokens(buffer)
-                                token_count += chunk_len
-                                yield {
-                                    "content": "",
-                                    "reasoning_content": buffer,
-                                    "token_count": chunk_len,
-                                    "total_token_count": token_count,
-                                    "token_rate": token_count / (time.time() - start_time)
-                                }
-                                buffer = ""
-                                processed_chunk = True
-                    
-                    if not processed_chunk:
-                        # 如果没有处理任何数据（通常是因为等待半截标签），强制跳出等待更多输入
-                        break
-
-            except Empty:
-                break
+                # Mark the instance as initialized
+                OpenvinoRuntime._initialized = True
+                logger.info("OpenvinoRuntime initialized successfully")
             except Exception as e:
-                logger.error(f"Generator Loop Error: {e}")
-                break
+                # Log an error if the initialization fails
+                logger.error(f"Failed to initialize OpenvinoRuntime: {e}")
+                raise
 
-        # 处理剩余的 buffer (循环结束后的残余)
-        if buffer:
-            chunk_len = self._count_tokens(buffer)
-            token_count += chunk_len
-            if in_think:
-                yield {
-                    "content": "",
-                    "reasoning_content": buffer,
-                    "token_count": chunk_len,
-                    "total_token_count": token_count,
-                    "token_rate": token_count / (time.time() - start_time)
-                }
-            else:
-                yield {
-                    "content": buffer,
-                    "reasoning_content": "",
-                    "token_count": chunk_len,
-                    "total_token_count": token_count,
-                    "token_rate": token_count / (time.time() - start_time)
-                }
+    def _init_components(self):
+        """
+        Initializes the components of the OpenvinoRuntime instance, including
+        the model and generation configuration.
+
+        This method loads the model from the specified path and sets up the generation
+        configuration based on the provided configuration.
+        """
+        model_path = self.config["model_path"]
+        device = self.config["device"]
         
-        thread.join()
+        logger.info(f"Loading model from {model_path} on {device}...")
+        # Load the model from the specified path
+        self.pipe = ov_genai.LLMPipeline(model_path, device)
+        logger.info("Model loaded successfully (Mock)")
         
+        # Set up the generation configuration
+        self._setup_generation_config()
         
-if __name__ == '__main__':
-    llm = OpenvinoRuntime()
-    # 测试一下带有思考过程的 prompt (假设模型支持)
-    prompt = "请详细分析一下中医理论中'阴阳'的概念，并给出思考过程。 /think"
+        # Initialize the prompt templates
+        self.prompt_templates = PromptTemplates()
+        
+        # Initialize the stop strings
+        self.stop_strings = self.config["stop_strings"]
+
+    def _setup_generation_config(self):
+        """
+        Setup the generation configuration based on the provided configuration.
+
+        The generation configuration is used to control the text generation process.
+        """
+        gen_cfg = self.config["generation"]
+        self.gen_config = ov_genai.GenerationConfig()
+        # Maximum number of new tokens to generate
+        self.gen_config.max_new_tokens = gen_cfg["max_new_tokens"]
+        # Temperature of the softmax distribution
+        self.gen_config.temperature = gen_cfg["temperature"]
+        # Number of tokens to sample from the top-p tokens
+        self.gen_config.top_p = gen_cfg["top_p"]
+        # Number of tokens to sample from the top-k tokens
+        self.gen_config.top_k = gen_cfg["top_k"]
+        # Whether to sample from the top tokens or not
+        self.gen_config.do_sample = gen_cfg["do_sample"]
+        # Repetition penalty to prevent the model from generating the same tokens
+        self.gen_config.repetition_penalty = gen_cfg["repetition_penalty"]
+        logger.info(f"Generation config: do_sample={self.gen_config.do_sample}, rep_penalty={self.gen_config.repetition_penalty}, max_tokens={self.gen_config.max_new_tokens}")
+
+    def _apply_chat_template(self, messages: List[Dict[str, str]]) -> str:
+        """
+        Apply the chat template to the given messages.
+
+        The chat template is used to format the messages in a way that is compatible
+        with the OpenVINO model.
+
+        Args:
+            messages (List[Dict[str, str]]): The list of messages to apply the chat template to.
+                Each message should have a "role" key with a value of either "system" or "user",
+                and a "content" key with the message content.
+
+        Returns:
+            str: The formatted prompt string.
+        """
+        prompt_parts = []
+        for msg in messages:
+            role = msg["role"]
+            content = msg["content"]
+            # Add a comment to explain the formatting
+            prompt_parts.append(f"<|im_start|>{role}\n{content}<|im_end|>")
+        prompt_parts.append("<|im_start|>assistant\n")
+        # Add a comment to explain the joining of the prompt parts
+        return "\n".join(prompt_parts)
     
-    print("--- Start ---")
-    for chunk in llm.transfor_stream_msg(prompt):
-        if chunk.get('reasoning_content'):
-            print(f"\033[90m{chunk['reasoning_content']}\033[0m", end="", flush=True) # 灰色打印思考
+    def _build_prompt(self, msg: Union[str, List[Dict[str, str]]]) -> str:
+        """
+        Build the prompt string based on the given message.
+
+        The message can be either a string or a list of message dictionaries.
+        If the message is a string, it will be converted into a list of message dictionaries
+        using the `get_messages` method of the `PromptTemplates` class. If the message is
+        a list of message dictionaries, it will be used as is.
+
+        Args:
+            msg (Union[str, List[Dict[str, str]]]): The message to build the prompt string from.
+
+        Returns:
+            str: The formatted prompt string.
+        """
+        if isinstance(msg, str):
+            # Convert the string message into a list of message dictionaries
+            messages = self.prompt_templates.get_messages(user_query=msg)
         else:
-            print(chunk['content'], end="", flush=True)
-    print("\n--- Done ---")
+            # Use the given list of message dictionaries
+            messages = msg
+            # Check if the list of messages contains a system message
+            has_system = any(m.get("role") == "system" for m in messages)
+            if not has_system:
+                # Add a system message to the list of messages if it doesn't contain one
+                system_msg = {"role": "system", "content": self.prompt_templates.SYSTEM_PROMPT_TCM}
+                messages = [system_msg] + list(messages)
+        # Apply the chat template to the list of messages
+        return self._apply_chat_template(messages)
+        
+    def transfor_stream_msg(
+        self,
+        msg: Union[str, List[Dict[str, str]]],
+        **kwargs
+    ) -> Generator[Dict[str, str], None, None]:
+        """
+        Stream the output of the OpenVINO model as it is generated.
+
+        The method uses a ChunkingStreamer to read the output of the OpenVINO model
+        in chunks of 15 tokens. The output is then yielded as a generator.
+
+        Args:
+            msg (Union[str, List[Dict[str, str]]]): The message to generate text from.
+                Can be either a string or a list of message dictionaries.
+            **kwargs: Additional keyword arguments to control the generation process.
+
+        Yields:
+            Dict[str, str]: A dictionary containing the generated text and other information.
+        """
+        # Check if the system is busy
+        if not OpenvinoRuntime._inference_lock.acquire(blocking=False):
+            logger.warning("Inference request denied: System is busy.")
+            yield {"content": "系统繁忙，请稍后再试，CPU资源已被占用。","finished": True,"stop_reason": "busy_lock"}
+            return
+        try:
+            # Build the prompt string
+            prompt = self._build_prompt(msg)
+            # Get the early stop configuration
+            early_stop_cfg = self.config["early_stop"]
+            # Get the timeout from the early stop configuration
+            timeout = kwargs.get("timeout_seconds", early_stop_cfg["timeout_seconds"])
+            # Create a token queue to store the generated tokens
+            token_queue: Queue = Queue()
+            # Create a ChunkingStreamer to read the output of the OpenVINO model
+            streamer = ChunkingStreamer(
+                token_queue=token_queue,
+                stop_strings=self.stop_strings,
+                timeout_seconds=timeout,
+                chunk_size=15, 
+            )
+            # Get the generation configuration
+            gen_config = self.gen_config
+            # Update the generation configuration with the provided keyword arguments
+            if kwargs:
+                temp_gen_config = ov_genai.GenerationConfig()
+                temp_gen_config.max_new_tokens = kwargs.get("max_new_tokens", self.config["generation"]["max_new_tokens"])
+                temp_gen_config.temperature = kwargs.get("temperature", self.config["generation"]["temperature"])
+                temp_gen_config.top_p = kwargs.get("top_p", self.config["generation"]["top_p"])
+                temp_gen_config.top_k = kwargs.get("top_k", self.config["generation"]["top_k"])
+                temp_gen_config.do_sample = kwargs.get("do_sample", self.config["generation"]["do_sample"])
+                temp_gen_config.repetition_penalty = kwargs.get("repetition_penalty", self.config["generation"]["repetition_penalty"])
+                gen_config = temp_gen_config
+            # Create a list to store any generation errors
+            generation_error = [None]
+            # Define a function to run the generation
+            def run_generation():
+                try:
+                    # Run the generation
+                    self.pipe.generate(prompt, gen_config, streamer)
+                except Exception as e:
+                    # Store any generation errors
+                    generation_error[0] = e
+                    logger.error(f"Generation error: {e}")
+                finally:
+                    # End the streamer
+                    streamer.end()
+            # Create a thread to run the generation
+            gen_thread = threading.Thread(target=run_generation, daemon=True)
+            # Start the generation thread
+            gen_thread.start()
+            # Run a loop to yield the generated text
+            while True:
+                try:
+                    # Get a token from the token queue
+                    token = token_queue.get(timeout=timeout + 5)
+                    # If the token is None, break the loop
+                    if token is None:
+                        break
+                    token = token.strip()
+                    token = token.replace(THINK_END_TAG, '')
+                    # Yield the generated text
+                    yield {"content": token,"finished": False,"stop_reason": "",}
+                except Empty:
+                    logger.warning("Token queue timeout")
+                    break
+            # Join the generation thread
+            gen_thread.join(timeout=2)
+            # If there is a generation error, raise it
+            if generation_error[0]:
+                raise generation_error[0]
+            # Get the clean texts from the streamer
+            final_text = streamer.get_clean_texts()
+            # Yield the final text
+            yield {"content": "","finished": True,"stop_reason": streamer.stop_reason or "completed","full_response": final_text,}
+        except Exception as e:
+            # Yield an error message if there is an exception
+            yield {"content": "","finished": True,"stop_reason": f"runtime_error: {e}","error": str(e)}
+        finally:
+            # Release the inference lock
+            OpenvinoRuntime._inference_lock.release()
+            #logger.debug("Inference lock released.")
+
+if __name__ == '__main__':
+
+    logger.info("=" * 60)
+    logger.info("Qwen3 0.6B OpenVINO Runtime - 优化测试")
+    logger.info("=" * 60)
+
+    input_prompt = "药膳推荐几款暖身的食材？"
+
+    try:
+        llm = OpenvinoRuntime()
+        logger.info(f"🔤 Prompt: {input_prompt}")
+        logger.info("=" * 60)
+        full_response = ""
+        for chunk in llm.transfor_stream_msg(input_prompt):
+            if not chunk["finished"]:
+                print(chunk["content"], end="", flush=True)
+                full_response += chunk["content"]
+            else:
+                if 'full_response' in chunk:
+                    # 如果有清理后的完整回复，通常是最好的结果
+                    final_text = chunk['full_response']
+                    if not full_response:
+                        print(final_text)  # 如果流式输出缺失，则输出最终清理结果
+
+        print("\n✅ Done")
+    except Exception as e:
+        logger.error(f"主程序运行失败: {e}")
