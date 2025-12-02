@@ -3,7 +3,7 @@ Copyright (c) 2025 by Zhenhui Yuan. All right reserved.
 FilePath: /brain-mix/nlp/models/reasoning/step3_openvino_runtime.py
 Author: yuanzhenhui
 Date: 2025-11-25 09:46:31
-LastEditTime: 2025-12-02 08:37:22
+LastEditTime: 2025-12-02 11:55:24
 """
 
 import openvino_genai as ov_genai
@@ -15,6 +15,7 @@ import time
 import os
 import re
 import sys
+import tiktoken
 
 project_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 sys.path.append(os.path.join(project_dir, 'utils'))
@@ -561,27 +562,38 @@ class OpenvinoRuntime:
 if __name__ == '__main__':
 
     logger.info("=" * 60)
-    logger.info("Qwen3 0.6B OpenVINO Runtime - 优化测试")
+    logger.info("Qwen3 0.6B OpenVINO Runtime 推理测试")
     logger.info("=" * 60)
 
-    input_prompt = "药膳推荐几款暖身的食材？"
+    input_prompt = "中医药理论是否能解释并解决全身乏力伴随心跳过速的症状？"
+    
+    enc = tiktoken.get_encoding("cl100k_base")
 
     try:
         llm = OpenvinoRuntime()
-        logger.info(f"🔤 Prompt: {input_prompt}")
+        logger.info(f"提示词: {input_prompt}")
         logger.info("=" * 60)
         full_response = ""
+        token_count = 0
+        start_time = time.time()
         for chunk in llm.transfor_stream_msg(input_prompt):
             if not chunk["finished"]:
                 print(chunk["content"], end="", flush=True)
                 full_response += chunk["content"]
+                token_count += len(enc.encode(chunk["content"]))
             else:
                 if 'full_response' in chunk:
-                    # 如果有清理后的完整回复，通常是最好的结果
                     final_text = chunk['full_response']
                     if not full_response:
-                        print(final_text)  # 如果流式输出缺失，则输出最终清理结果
-
-        print("\n✅ Done")
+                        print(final_text)
+                        token_count += len(enc.encode(final_text))
+        end_time = time.time()
+        duration = end_time - start_time
+        logger.info("=" * 60)
+        logger.info(f"总用时: {duration:.2f} 秒")
+        logger.info(f"总生成 token 数: {token_count}")
+        if duration > 0:
+            logger.info(f"生成速率: {token_count/duration:.2f} token/秒")
+        logger.info("=" * 60)
     except Exception as e:
         logger.error(f"主程序运行失败: {e}")

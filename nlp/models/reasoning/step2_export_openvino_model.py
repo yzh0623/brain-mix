@@ -217,8 +217,7 @@ class ExportOpenvinoModel:
             '--cache_size', str(self.cache_size),
             '--max_num_seqs', str(self.max_num_seqs),
             '--max_num_batched_tokens', str(self.max_num_batched_tokens),
-            '--reasoning_parser', self.reasoning_parser,
-            '--extra_quantization_params', '--sym --group-size 128'
+            '--reasoning_parser', self.reasoning_parser
         ]
 
         # Add the --enable_prefix_caching flag if prefix caching is enabled
