@@ -39,10 +39,35 @@ models:
       dataloader:
         num_workers: 4
     unsloth_merge_model: <dir>/FinalBestModelMerged
-    openvino_model: <dir>/OpenVINOModel
+    openvino:
+      model: <dir>/OpenVINOModel
+      model_device: "CPU"
+      genai:
+        max_tokens: 300
+        temperature: 0.1
+        top_p: 0.7
+        top_k: 10
+        do_sample: False
+        repetition_penalty: 1.2
+        timeout_seconds: 30.0
+      ovms:
+        model_name: "qwen3-reasoning"
+        weight_format: "fp16"
+        enable_prefix_caching: True
+        cache_size: 10
+        max_num_seqs: 4
+        max_num_batched_tokens: 2048
+        reasoning_parser: "qwen3"
+      validate:
+        dataset_path: "<dir>/验证问题集/"
+      score:
+        dataset_path: "<dir>/评分集/"
   embedding:
     path: <embedding_path>/BAAI/bge-large-zh-v1.5
     normalize_embeddings: True
+  compress:
+    path: <dir>/Huggingface/paraphrase-multilingual-MiniLM-L12-v2
+    device: cpu
 
 datasets:
   base_path: <dataset_path>/Datasets

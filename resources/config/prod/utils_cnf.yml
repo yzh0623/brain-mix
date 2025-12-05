@@ -18,6 +18,8 @@ persistence:
     password: <mysql_password>
     schemas: <mysql_schemas>
     charset: utf8mb4
+  sqlite:
+    db_name: check_base.sqlite
 
 silicon:
   url: "https://api.siliconflow.cn/v1"
