@@ -117,7 +117,7 @@ typing-inspection==0.4.2
 typing_extensions==4.15.0
 tzdata==2025.2
 unsloth==2024.8
-urllib3==2.5.0
+urllib3==2.6.0
 wrapt==2.0.1
 xxhash==3.6.0
 yarl==1.22.0
